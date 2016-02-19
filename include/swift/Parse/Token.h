@@ -2,7 +2,7 @@
 //
 // This source file is part of the Swift.org open source project
 //
-// Copyright (c) 2014 - 2015 Apple Inc. and the Swift project authors
+// Copyright (c) 2014 - 2016 Apple Inc. and the Swift project authors
 // Licensed under Apache License v2.0 with Runtime Library Exception
 //
 // See http://swift.org/LICENSE.txt for license information
@@ -38,16 +38,11 @@ enum class tok {
   floating_literal,
   string_literal,
   sil_local_name,      // %42 in SIL mode.
-  pound_if,
-  pound_else,
-  pound_elseif,
-  pound_endif,
-  pound_line,
-  pound_available,
   comment,
   
 #define KEYWORD(X) kw_ ## X,
 #define PUNCTUATOR(X, Y) X,
+#define POUND_KEYWORD(X) pound_ ## X,
 #include "swift/Parse/Tokens.def"
   
   NUM_TOKENS
@@ -261,6 +256,9 @@ public:
     return SourceLoc(llvm::SMLoc::getFromPointer(trimComment().begin()));
   }
 
+  StringRef getRawText() const {
+    return Text;
+  }
 
   StringRef getText() const {
     if (EscapedIdentifier) {

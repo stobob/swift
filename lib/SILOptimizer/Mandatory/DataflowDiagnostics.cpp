@@ -1,8 +1,8 @@
-//===-- DataflowDiagnostics.cpp - Emits diagnostics based on SIL analysis -===//
+//===--- DataflowDiagnostics.cpp - Emits diagnostics based on SIL analysis ===//
 //
 // This source file is part of the Swift.org open source project
 //
-// Copyright (c) 2014 - 2015 Apple Inc. and the Swift project authors
+// Copyright (c) 2014 - 2016 Apple Inc. and the Swift project authors
 // Licensed under Apache License v2.0 with Runtime Library Exception
 //
 // See http://swift.org/LICENSE.txt for license information
@@ -75,7 +75,7 @@ static void diagnoseUnreachable(const SILInstruction *I,
     // transparently inlined. We should have already emitted these
     // diagnostics when we process the callee function prior to
     // inlining it.
-    if (!L.hasASTLocation() || L.is<MandatoryInlinedLocation>())
+    if (!L || L.is<MandatoryInlinedLocation>())
       return;
 
     // The most common case of getting an unreachable instruction is a

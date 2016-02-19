@@ -2,7 +2,7 @@
 //
 // This source file is part of the Swift.org open source project
 //
-// Copyright (c) 2014 - 2015 Apple Inc. and the Swift project authors
+// Copyright (c) 2014 - 2016 Apple Inc. and the Swift project authors
 // Licensed under Apache License v2.0 with Runtime Library Exception
 //
 // See http://swift.org/LICENSE.txt for license information
@@ -25,13 +25,13 @@
 #include "swift/SIL/SILAllocated.h"
 #include "swift/SIL/SILDeclRef.h"
 #include "swift/SIL/SILFunction.h"
+#include "swift/AST/ProtocolConformanceRef.h"
 #include "llvm/ADT/ilist_node.h"
 #include "llvm/ADT/ilist.h"
 #include <string>
 
 namespace swift {
 
-class ClassDecl;
 class SILFunction;
 class SILModule;
 class NormalProtocolConformance;
@@ -68,7 +68,7 @@ public:
     ProtocolDecl *Protocol;
     /// The ProtocolConformance satisfying the requirement. Null if the
     /// conformance is dependent.
-    ProtocolConformance *Witness;
+    ProtocolConformanceRef Witness;
   };
   
   /// A witness table entry referencing the protocol conformance for a refined
@@ -202,6 +202,8 @@ private:
   /// Private constructor for making SILWitnessTable declarations.
   SILWitnessTable(SILModule &M, SILLinkage Linkage, StringRef Name,
                   NormalProtocolConformance *Conformance);
+
+  void addWitnessTable();
 
 public:
   /// Create a new SILWitnessTable definition with the given entries.

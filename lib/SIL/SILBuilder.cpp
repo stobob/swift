@@ -1,8 +1,8 @@
-//===--- SILBuilder.cpp - Class for creating SIL Constructs ----------------==//
+//===--- SILBuilder.cpp - Class for creating SIL Constructs ---------------===//
 //
 // This source file is part of the Swift.org open source project
 //
-// Copyright (c) 2014 - 2015 Apple Inc. and the Swift project authors
+// Copyright (c) 2014 - 2016 Apple Inc. and the Swift project authors
 // Licensed under Apache License v2.0 with Runtime Library Exception
 //
 // See http://swift.org/LICENSE.txt for license information
@@ -16,6 +16,17 @@ using namespace swift;
 //===----------------------------------------------------------------------===//
 // SILBuilder Implementation
 //===----------------------------------------------------------------------===//
+
+TupleInst *SILBuilder::createTuple(SILLocation loc, ArrayRef<SILValue> elts) {
+  // Derive the tuple type from the elements.
+  SmallVector<TupleTypeElt, 4> eltTypes;
+  for (auto elt : elts)
+    eltTypes.push_back(elt->getType().getSwiftRValueType());
+  auto tupleType = SILType::getPrimitiveObjectType(
+      CanType(TupleType::get(eltTypes, F.getASTContext())));
+
+  return createTuple(loc, tupleType, elts);
+}
 
 SILType SILBuilder::getPartialApplyResultType(SILType origTy, unsigned argCount,
                                               SILModule &M,
@@ -36,7 +47,7 @@ SILType SILBuilder::getPartialApplyResultType(SILType origTy, unsigned argCount,
   auto appliedFnType = SILFunctionType::get(nullptr, extInfo,
                                             ParameterConvention::Direct_Owned,
                                             newParams,
-                                            FTI->getResult(),
+                                            FTI->getAllResults(),
                                             FTI->getOptionalErrorResult(),
                                             M.getASTContext());
   return SILType::getPrimitiveObjectType(appliedFnType);
@@ -48,7 +59,7 @@ SILInstruction *SILBuilder::tryCreateUncheckedRefCast(SILLocation Loc,
                                                       SILValue Op,
                                                       SILType ResultTy) {
   auto &M = F.getModule();
-  if (!SILType::canRefCast(Op.getType(), ResultTy, M))
+  if (!SILType::canRefCast(Op->getType(), ResultTy, M))
     return nullptr;
 
   return insert(
@@ -165,7 +176,7 @@ static bool couldReduceStrongRefcount(SILInstruction *Inst) {
   // value drops a retain.  We would have to do more alias analysis to be able
   // to safely ignore one of those.
   if (auto AI = dyn_cast<AssignInst>(Inst)) {
-    auto StoredType = AI->getOperand(0).getType();
+    auto StoredType = AI->getOperand(0)->getType();
     if (StoredType.isTrivial(Inst->getModule()) ||
         StoredType.is<ReferenceStorageType>())
       return false;
@@ -176,7 +187,7 @@ static bool couldReduceStrongRefcount(SILInstruction *Inst) {
     if (CAI->isInitializationOfDest())
       return false;
 
-    SILType StoredType = CAI->getOperand(0).getType().getObjectType();
+    SILType StoredType = CAI->getOperand(0)->getType().getObjectType();
     if (StoredType.isTrivial(Inst->getModule()) ||
         StoredType.is<ReferenceStorageType>())
       return false;

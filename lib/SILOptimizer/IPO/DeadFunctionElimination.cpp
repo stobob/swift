@@ -2,7 +2,7 @@
 //
 // This source file is part of the Swift.org open source project
 //
-// Copyright (c) 2014 - 2015 Apple Inc. and the Swift project authors
+// Copyright (c) 2014 - 2016 Apple Inc. and the Swift project authors
 // Licensed under Apache License v2.0 with Runtime Library Exception
 //
 // See http://swift.org/LICENSE.txt for license information
@@ -14,7 +14,6 @@
 #include "swift/SILOptimizer/PassManager/Passes.h"
 #include "swift/SILOptimizer/PassManager/Transforms.h"
 #include "swift/SIL/PatternMatch.h"
-#include "swift/SIL/Projection.h"
 #include "swift/SIL/SILBuilder.h"
 #include "swift/SIL/SILVisitor.h"
 #include "swift/SILOptimizer/Utils/Local.h"
@@ -188,7 +187,7 @@ protected:
           MethodInfo *mi = getMethodInfo(funcDecl);
           ClassDecl *MethodCl = nullptr;
           if (MI->getNumOperands() == 1)
-            MethodCl = MI->getOperand(0)->getType(0).getClassOrBoundGenericClass();
+            MethodCl = MI->getOperand(0)->getType().getClassOrBoundGenericClass();
           ensureAlive(mi, dyn_cast<FuncDecl>(funcDecl), MethodCl);
         } else if (auto *FRI = dyn_cast<FunctionRefInst>(&I)) {
           ensureAlive(FRI->getReferencedFunction());
@@ -237,6 +236,11 @@ protected:
     for (SILFunction &F : *Module) {
       if (isAnchorFunction(&F)) {
         DEBUG(llvm::dbgs() << "  anchor function: " << F.getName() << "\n");
+        ensureAlive(&F);
+      }
+
+      if (!F.shouldOptimize()) {
+        DEBUG(llvm::dbgs() << "  anchor a no optimization function: " << F.getName() << "\n");
         ensureAlive(&F);
       }
     }
@@ -340,6 +344,18 @@ class DeadFunctionElimination : FunctionLivenessComputation {
           ensureAlive(mi, nullptr, nullptr);
       }
     }
+
+    // Check default witness methods.
+    for (SILDefaultWitnessTable &WT : Module->getDefaultWitnessTableList()) {
+      for (const SILDefaultWitnessTable::Entry &entry : WT.getEntries()) {
+        SILFunction *F = entry.getWitness();
+        auto *fd = cast<AbstractFunctionDecl>(entry.getRequirement().getDecl());
+
+        MethodInfo *mi = getMethodInfo(fd);
+        addImplementingFunction(mi, F, nullptr);
+        ensureAlive(mi, nullptr, nullptr);
+      }
+    }
   }
 
   /// Removes all dead methods from vtables and witness tables.
@@ -389,7 +405,6 @@ public:
         F.dropAllReferences();
 
     // Next step: delete all dead functions.
-    bool NeedUpdate = false;
     for (auto FI = Module->begin(), EI = Module->end(); FI != EI;) {
       SILFunction *F = &*FI;
       ++FI;
@@ -397,7 +412,6 @@ public:
         DEBUG(llvm::dbgs() << "  erase dead function " << F->getName() << "\n");
         NumDeadFunc++;
         Module->eraseFunction(F);
-        NeedUpdate = true;
         DFEPass->invalidateAnalysis(F, SILAnalysis::InvalidationKind::Everything);
       }
     }

@@ -2,7 +2,7 @@
 //
 // This source file is part of the Swift.org open source project
 //
-// Copyright (c) 2014 - 2015 Apple Inc. and the Swift project authors
+// Copyright (c) 2014 - 2016 Apple Inc. and the Swift project authors
 // Licensed under Apache License v2.0 with Runtime Library Exception
 //
 // See http://swift.org/LICENSE.txt for license information
@@ -34,8 +34,6 @@ static bool isSafeNonExitTerminator(TermInst *TI) {
   case TermKind::ThrowInst:
   case TermKind::TryApplyInst:
     return false;
-  case TermKind::Invalid:
-    llvm_unreachable("Invalid Term Inst?!");
   }
 }
 

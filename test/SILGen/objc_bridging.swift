@@ -1,4 +1,4 @@
-// RUN: %target-swift-frontend -emit-silgen -sdk %S/Inputs -I %S/Inputs -enable-source-import %s | FileCheck %s --check-prefix=CHECK --check-prefix=CHECK-%target-cpu --check-prefix=CHECK-%target-os-%target-cpu
+// RUN: %target-swift-frontend -Xllvm -sil-full-demangle -emit-silgen -sdk %S/Inputs -I %S/Inputs -enable-source-import %s | FileCheck %s --check-prefix=CHECK --check-prefix=CHECK-%target-cpu --check-prefix=CHECK-%target-os-%target-cpu
 
 // REQUIRES: objc_interop
 
@@ -18,7 +18,7 @@ func getDescription(o: NSObject) -> String {
 // CHECK:  [[NATIVE:%.*]] = apply [[NSSTRING_TO_STRING]]([[BRIDGED_BOX]])
 // CHECK:  [[OPT_NATIVE:%.*]] = enum $ImplicitlyUnwrappedOptional<String>, #ImplicitlyUnwrappedOptional.Some!enumelt.1, [[NATIVE]]
 // CHECK:  [[T0:%.*]] = function_ref @_TFs36_getImplicitlyUnwrappedOptionalValue
-// CHECK:  apply [[T0]]<String>([[NATIVE_BUF:%.*]]#1,
+// CHECK:  apply [[T0]]<String>([[NATIVE_BUF:%[0-9]*]],
 // CHECK:  [[NATIVE:%.*]] = load [[NATIVE_BUF]]
 // CHECK:  return [[NATIVE]] 
 // CHECK:}
@@ -40,7 +40,7 @@ func getUppercaseString(s: NSString) -> String {
 // CHECK:   [[NATIVE:%.*]] = apply [[NSSTRING_TO_STRING]]([[BRIDGED_BOX]])
 // CHECK:   [[OPT_NATIVE:%.*]] = enum $ImplicitlyUnwrappedOptional<String>, #ImplicitlyUnwrappedOptional.Some!enumelt.1, [[NATIVE]]
 // CHECK:   [[T0:%.*]] = function_ref @_TFs36_getImplicitlyUnwrappedOptionalValue
-// CHECK:   apply [[T0]]<String>([[NATIVE_BUF:%.*]]#1,
+// CHECK:   apply [[T0]]<String>([[NATIVE_BUF:%[0-9]*]],
 // CHECK:   [[NATIVE:%.*]] = load [[NATIVE_BUF]]
 // CHECK:   return [[NATIVE]]
 // CHECK: }
@@ -161,7 +161,7 @@ func callBar() -> String {
 // CHECK:   [[NATIVE:%.*]] = apply [[NSSTRING_TO_STRING]]([[BRIDGED_BOX]])
 // CHECK:   [[OPT_NATIVE:%.*]] = enum $ImplicitlyUnwrappedOptional<String>, #ImplicitlyUnwrappedOptional.Some!enumelt.1, [[NATIVE]]
 // CHECK:   [[T0:%.*]] = function_ref @_TFs36_getImplicitlyUnwrappedOptionalValue
-// CHECK:   apply [[T0]]<String>([[NATIVE_BUF:%.*]]#1,
+// CHECK:   apply [[T0]]<String>([[NATIVE_BUF:%[0-9]*]],
 // CHECK:   [[NATIVE:%.*]] = load [[NATIVE_BUF]]
 // CHECK:   return [[NATIVE]]
 // CHECK: }

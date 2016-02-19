@@ -2,7 +2,7 @@
 //
 // This source file is part of the Swift.org open source project
 //
-// Copyright (c) 2014 - 2015 Apple Inc. and the Swift project authors
+// Copyright (c) 2014 - 2016 Apple Inc. and the Swift project authors
 // Licensed under Apache License v2.0 with Runtime Library Exception
 //
 // See http://swift.org/LICENSE.txt for license information
@@ -18,6 +18,7 @@
 #include "swift/Basic/STLExtras.h"
 #include "swift/Basic/Version.h"
 #include "clang/AST/DeclObjC.h"
+#include "clang/Lex/MacroInfo.h"
 #include "clang/Serialization/ASTBitCodes.h"
 #include "clang/Serialization/ASTReader.h"
 #include "clang/Serialization/ASTWriter.h"
@@ -146,17 +147,18 @@ auto SwiftLookupTable::findOrCreate(StringRef baseName)
   // Find entries for this base name.
   auto known = LookupTable.find(baseName);
 
-  // If we found somthing, we're done.
+  // If we found something, we're done.
   if (known != LookupTable.end()) return known;
   
   // If there's no reader, we've found all there is to find.
   if (!Reader) return known;
 
-  // Add an entry to the table so we don't look again.
-  known = LookupTable.insert({ baseName, { } }).first;
-
   // Lookup this base name in the module file.
-  (void)Reader->lookup(baseName, known->second);
+  SmallVector<FullTableEntry, 2> results;
+  (void)Reader->lookup(baseName, results);
+
+  // Add an entry to the table so we don't look again.
+  known = LookupTable.insert({ std::move(baseName), std::move(results) }).first;
 
   return known;
 }
@@ -384,7 +386,6 @@ void SwiftLookupTable::dump() const {
 // ---------------------------------------------------------------------------
 // Serialization
 // ---------------------------------------------------------------------------
-using llvm::Fixnum;
 using llvm::BCArray;
 using llvm::BCBlob;
 using llvm::BCFixed;

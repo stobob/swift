@@ -2,7 +2,7 @@
 //
 // This source file is part of the Swift.org open source project
 //
-// Copyright (c) 2014 - 2015 Apple Inc. and the Swift project authors
+// Copyright (c) 2014 - 2016 Apple Inc. and the Swift project authors
 // Licensed under Apache License v2.0 with Runtime Library Exception
 //
 // See http://swift.org/LICENSE.txt for license information
@@ -50,10 +50,7 @@ using ARCBBStateInfoHandle = ARCSequenceDataflowEvaluator::ARCBBStateInfoHandle;
 ///
 /// NestingDetected will be set to indicate that the block needs to be
 /// reanalyzed if code motion occurs.
-static bool processBBTopDown(
-    ARCBBState &BBState,
-    BlotMapVector<SILInstruction *, TopDownRefCountState> &DecToIncStateMap,
-    AliasAnalysis *AA, RCIdentityFunctionInfo *RCIA) {
+bool ARCSequenceDataflowEvaluator::processBBTopDown(ARCBBState &BBState) {
   DEBUG(llvm::dbgs() << ">>>> Top Down!\n");
 
   SILBasicBlock &BB = BBState.getBB();
@@ -61,7 +58,7 @@ static bool processBBTopDown(
   bool NestingDetected = false;
 
   TopDownDataflowRCStateVisitor<ARCBBState> DataflowVisitor(
-      RCIA, BBState, DecToIncStateMap);
+      RCIA, BBState, DecToIncStateMap, SetFactory);
 
   // If the current BB is the entry BB, initialize a state corresponding to each
   // of its owned parameters. This enables us to know that if we see a retain
@@ -110,7 +107,7 @@ static bool processBBTopDown(
       if (Op && OtherState->first == Op)
         continue;
 
-      OtherState->second.updateForSameLoopInst(&I, &I, AA);
+      OtherState->second.updateForSameLoopInst(&I, &I, SetFactory, AA);
     }
   }
 
@@ -187,8 +184,7 @@ bool ARCSequenceDataflowEvaluator::processTopDown() {
     mergePredecessors(BBDataHandle);
 
     // Then perform the basic block optimization.
-    NestingDetected |=
-        processBBTopDown(BBDataHandle.getState(), DecToIncStateMap, AA, RCIA);
+    NestingDetected |= processBBTopDown(BBDataHandle.getState());
   }
 
   return NestingDetected;
@@ -202,8 +198,6 @@ bool ARCSequenceDataflowEvaluator::processTopDown() {
 // finished and Block ARC is removed.
 static bool isARCSignificantTerminator(TermInst *TI) {
   switch (TI->getTermKind()) {
-  case TermKind::Invalid:
-    llvm_unreachable("Expected a TermInst");
   case TermKind::UnreachableInst:
   // br is a forwarding use for its arguments. It cannot in of itself extend
   // the lifetime of an object (just like a phi-node) cannot.
@@ -252,7 +246,7 @@ bool ARCSequenceDataflowEvaluator::processBBBottomUp(
 
   BottomUpDataflowRCStateVisitor<ARCBBState> DataflowVisitor(
       RCIA, BBState, FreezeOwnedArgEpilogueReleases, ConsumedArgToReleaseMap,
-      IncToDecStateMap);
+      IncToDecStateMap, SetFactory);
 
   // For each terminator instruction I in BB visited in reverse...
   for (auto II = std::next(BB.rbegin()), IE = BB.rend(); II != IE;) {
@@ -292,7 +286,7 @@ bool ARCSequenceDataflowEvaluator::processBBBottomUp(
       if (Op && OtherState->first == Op)
         continue;
 
-      OtherState->second.updateForSameLoopInst(&I, InsertPt, AA);
+      OtherState->second.updateForSameLoopInst(&I, InsertPt, SetFactory, AA);
     }
   }
 
@@ -318,7 +312,8 @@ bool ARCSequenceDataflowEvaluator::processBBBottomUp(
     if (!OtherState.hasValue())
       continue;
 
-    OtherState->second.updateForPredTerminators(PredTerminators, InsertPt, AA);
+    OtherState->second.updateForPredTerminators(PredTerminators, InsertPt,
+                                                SetFactory, AA);
   }
 
   return NestingDetected;
@@ -409,7 +404,7 @@ ARCSequenceDataflowEvaluator::ARCSequenceDataflowEvaluator(
     BlotMapVector<SILInstruction *, TopDownRefCountState> &DecToIncStateMap,
     BlotMapVector<SILInstruction *, BottomUpRefCountState> &IncToDecStateMap)
     : F(F), AA(AA), POA(POA), RCIA(RCIA), DecToIncStateMap(DecToIncStateMap),
-      IncToDecStateMap(IncToDecStateMap),
+      IncToDecStateMap(IncToDecStateMap), Allocator(), SetFactory(Allocator),
       // We use a malloced pointer here so we don't need to expose
       // ARCBBStateInfo in the header.
       BBStateInfo(new ARCBBStateInfo(&F, POA, PTFI)),

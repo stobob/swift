@@ -2,7 +2,7 @@
 //
 // This source file is part of the Swift.org open source project
 //
-// Copyright (c) 2014 - 2015 Apple Inc. and the Swift project authors
+// Copyright (c) 2014 - 2016 Apple Inc. and the Swift project authors
 // Licensed under Apache License v2.0 with Runtime Library Exception
 //
 // See http://swift.org/LICENSE.txt for license information
@@ -140,14 +140,14 @@ func !=(lhs: Builtin.RawPointer, rhs: Builtin.RawPointer) -> Bool {
   return !(lhs == rhs)
 }
 
-/// Return `true` iff `t0` is identical to `t1`; i.e. if they are both
+/// Returns `true` iff `t0` is identical to `t1`; i.e. if they are both
 /// `nil` or they both represent the same type.
 @warn_unused_result
 public func == (t0: Any.Type?, t1: Any.Type?) -> Bool {
   return unsafeBitCast(t0, Int.self) == unsafeBitCast(t1, Int.self)
 }
 
-/// Return `false` iff `t0` is identical to `t1`; i.e. if they are both
+/// Returns `false` iff `t0` is identical to `t1`; i.e. if they are both
 /// `nil` or they both represent the same type.
 @warn_unused_result
 public func != (t0: Any.Type?, t1: Any.Type?) -> Bool {
@@ -388,6 +388,19 @@ internal var _objectPointerLowSpareBitShift: UInt {
 internal var _objCTaggedPointerBits: UInt {
     @inline(__always) get { return 0x8000_0000_0000_0000 }
 }
+#elseif arch(powerpc64) || arch(powerpc64le)
+internal var _objectPointerSpareBits: UInt {
+  @inline(__always) get { return 0x0000_0000_0000_0007 }
+}
+internal var _objectPointerIsObjCBit: UInt {
+  @inline(__always) get { return 0x0000_0000_0000_0002 }
+}
+internal var _objectPointerLowSpareBitShift: UInt {
+    @inline(__always) get { return 0 }
+}
+internal var _objCTaggedPointerBits: UInt {
+    @inline(__always) get { return 0 }
+}
 #endif
 
 /// Extract the raw bits of `x`.
@@ -475,7 +488,7 @@ internal func _makeBridgeObject(
   )
 }
 
-/// Return the superclass of `t`, if any.  The result is `nil` if `t` is
+/// Returns the superclass of `t`, if any.  The result is `nil` if `t` is
 /// a root class or class protocol.
 @inline(__always)
 @warn_unused_result
@@ -486,7 +499,7 @@ func _getSuperclass(t: AnyClass) -> AnyClass? {
     AnyClass.self)
 }
 
-/// Return the superclass of `t`, if any.  The result is `nil` if `t` is
+/// Returns the superclass of `t`, if any.  The result is `nil` if `t` is
 /// not a class, is a root class, or is a class protocol.
 @inline(__always)
 @warn_unused_result
@@ -514,21 +527,21 @@ func _getSuperclass(t: Any.Type) -> AnyClass? {
 // will attempt to generate generic code for the transparent function
 // and type checking will fail.
 
-/// Return true if `object` is uniquely referenced.
+/// Returns `true` if `object` is uniquely referenced.
 @_transparent
 @warn_unused_result
 internal func _isUnique<T>(inout object: T) -> Bool {
   return Bool(Builtin.isUnique(&object))
 }
 
-/// Return true if `object` is uniquely referenced or pinned.
+/// Returns `true` if `object` is uniquely referenced or pinned.
 @_transparent
 @warn_unused_result
 internal func _isUniqueOrPinned<T>(inout object: T) -> Bool {
   return Bool(Builtin.isUniqueOrPinned(&object))
 }
 
-/// Return true if `object` is uniquely referenced.
+/// Returns `true` if `object` is uniquely referenced.
 /// This provides sanity checks on top of the Builtin.
 @_transparent
 @warn_unused_result
@@ -545,7 +558,7 @@ func _isUnique_native<T>(inout object: T) -> Bool {
   return Bool(Builtin.isUnique_native(&object))
 }
 
-/// Return true if `object` is uniquely referenced or pinned.
+/// Returns `true` if `object` is uniquely referenced or pinned.
 /// This provides sanity checks on top of the Builtin.
 @_transparent
 @warn_unused_result
@@ -561,7 +574,7 @@ func _isUniqueOrPinned_native<T>(inout object: T) -> Bool {
   return Bool(Builtin.isUniqueOrPinned_native(&object))
 }
 
-/// Return true if type is a POD type. A POD type is a type that does not
+/// Returns `true` if type is a POD type. A POD type is a type that does not
 /// require any special handling on copying or destruction.
 @_transparent
 @warn_unused_result
@@ -570,7 +583,7 @@ func _isPOD<T>(type: T.Type) -> Bool {
   return Bool(Builtin.ispod(type))
 }
 
-/// Return true if type is nominally an Optional type.
+/// Returns `true` if type is nominally an Optional type.
 @_transparent
 @warn_unused_result
 public // @testable

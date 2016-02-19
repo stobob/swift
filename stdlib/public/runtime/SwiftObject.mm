@@ -2,7 +2,7 @@
 //
 // This source file is part of the Swift.org open source project
 //
-// Copyright (c) 2014 - 2015 Apple Inc. and the Swift project authors
+// Copyright (c) 2014 - 2016 Apple Inc. and the Swift project authors
 // Licensed under Apache License v2.0 with Runtime Library Exception
 //
 // See http://swift.org/LICENSE.txt for license information
@@ -43,12 +43,6 @@
 # import <CoreFoundation/CFBase.h> // for CFTypeID
 # include <malloc/malloc.h>
 # include <dispatch/dispatch.h>
-#endif
-#if SWIFT_RUNTIME_ENABLE_DTRACE
-# include "SwiftRuntimeDTraceProbes.h"
-#else
-#define SWIFT_ISUNIQUELYREFERENCED()
-#define SWIFT_ISUNIQUELYREFERENCEDORPINNED()
 #endif
 
 using namespace swift;
@@ -94,6 +88,7 @@ static_assert(std::is_trivially_destructible<SwiftObject_s>::value,
 #if __has_attribute(objc_root_class)
 __attribute__((objc_root_class))
 #endif
+SWIFT_RUNTIME_EXPORT
 @interface SwiftObject<NSObject> {
   // FIXME: rdar://problem/18950072 Clang emits ObjC++ classes as having
   // non-trivial structors if they contain any struct fields at all, regardless of
@@ -244,7 +239,8 @@ static NSString *_getClassDescription(Class cls) {
 
 - (void)doesNotRecognizeSelector: (SEL) sel {
   Class cls = (Class) _swift_getClassOfAllocated(self);
-  fatalError("Unrecognized selector %c[%s %s]\n", 
+  fatalError(/* flags = */ 0,
+             "Unrecognized selector %c[%s %s]\n",
              class_isMetaClass(cls) ? '+' : '-', 
              class_getName(cls), sel_getName(sel));
 }
@@ -1036,6 +1032,7 @@ bool swift::classConformsToObjCProtocol(const void *theClass,
   return [((Class) theClass) conformsToProtocol: (Protocol*) protocol];
 }
 
+SWIFT_RUNTIME_EXPORT
 extern "C" const Metadata *swift_dynamicCastTypeToObjCProtocolUnconditional(
                                                  const Metadata *type,
                                                  size_t numProtocols,
@@ -1084,6 +1081,7 @@ extern "C" const Metadata *swift_dynamicCastTypeToObjCProtocolUnconditional(
   return type;
 }
 
+SWIFT_RUNTIME_EXPORT
 extern "C" const Metadata *swift_dynamicCastTypeToObjCProtocolConditional(
                                                 const Metadata *type,
                                                 size_t numProtocols,
@@ -1130,6 +1128,7 @@ extern "C" const Metadata *swift_dynamicCastTypeToObjCProtocolConditional(
   return type;
 }
 
+SWIFT_RUNTIME_EXPORT
 extern "C" id swift_dynamicCastObjCProtocolUnconditional(id object,
                                                  size_t numProtocols,
                                                  Protocol * const *protocols) {
@@ -1144,6 +1143,7 @@ extern "C" id swift_dynamicCastObjCProtocolUnconditional(id object,
   return object;
 }
 
+SWIFT_RUNTIME_EXPORT
 extern "C" id swift_dynamicCastObjCProtocolConditional(id object,
                                                  size_t numProtocols,
                                                  Protocol * const *protocols) {
@@ -1156,7 +1156,7 @@ extern "C" id swift_dynamicCastObjCProtocolConditional(id object,
   return object;
 }
 
-extern "C" void swift::swift_instantiateObjCClass(const ClassMetadata *_c) {
+void swift::swift_instantiateObjCClass(const ClassMetadata *_c) {
   static const objc_image_info ImageInfo = {0, 0};
 
   // Ensure the superclass is realized.
@@ -1170,6 +1170,7 @@ extern "C" void swift::swift_instantiateObjCClass(const ClassMetadata *_c) {
   (void)registered;
 }
 
+SWIFT_RUNTIME_EXPORT
 extern "C" Class swift_getInitializedObjCClass(Class c) {
   // Used when we have class metadata and we want to ensure a class has been
   // initialized by the Objective C runtime. We need to do this because the
@@ -1231,7 +1232,6 @@ bool swift::swift_isUniquelyReferenced_nonNull_native(
 ) {
   assert(object != nullptr);
   assert(!object->refCount.isDeallocating());
-  SWIFT_ISUNIQUELYREFERENCED();
   return object->refCount.isUniquelyReferenced();
 }
 
@@ -1335,7 +1335,6 @@ bool swift::swift_isUniquelyReferencedOrPinned_native(
 /// pinned flag is set.
 bool swift::swift_isUniquelyReferencedOrPinned_nonNull_native(
                                                     const HeapObject* object) {
-  SWIFT_ISUNIQUELYREFERENCEDORPINNED();
   assert(object != nullptr);
   assert(!object->refCount.isDeallocating());
   return object->refCount.isUniquelyReferencedOrPinned();
@@ -1343,6 +1342,7 @@ bool swift::swift_isUniquelyReferencedOrPinned_nonNull_native(
 
 using ClassExtents = TwoWordPair<size_t, size_t>;
 
+SWIFT_RUNTIME_EXPORT
 extern "C"
 ClassExtents::Return
 swift_class_getInstanceExtents(const Metadata *c) {
@@ -1355,6 +1355,8 @@ swift_class_getInstanceExtents(const Metadata *c) {
 }
 
 #if SWIFT_OBJC_INTEROP
+
+SWIFT_RUNTIME_EXPORT
 extern "C"
 ClassExtents::Return
 swift_objc_class_unknownGetInstanceExtents(const ClassMetadata* c) {
@@ -1364,6 +1366,7 @@ swift_objc_class_unknownGetInstanceExtents(const ClassMetadata* c) {
   
   return swift_class_getInstanceExtents(c);
 }
+
 #endif
 
 const ClassMetadata *swift::getRootSuperclass() {

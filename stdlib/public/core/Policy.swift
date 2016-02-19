@@ -2,7 +2,7 @@
 //
 // This source file is part of the Swift.org open source project
 //
-// Copyright (c) 2014 - 2015 Apple Inc. and the Swift project authors
+// Copyright (c) 2014 - 2016 Apple Inc. and the Swift project authors
 // Licensed under Apache License v2.0 with Runtime Library Exception
 //
 // See http://swift.org/LICENSE.txt for license information
@@ -142,6 +142,10 @@ public protocol AnyObject : class {}
 /// - SeeAlso: `AnyObject`
 public typealias AnyClass = AnyObject.Type
 
+/// Returns `true` iff `lhs` and `rhs` are references to the same object
+/// instance (in other words, are identical pointers).
+///
+/// - SeeAlso: `Equatable`, `==`
 @warn_unused_result
 public func === (lhs: AnyObject?, rhs: AnyObject?) -> Bool {
   switch (lhs, rhs) {
@@ -172,7 +176,7 @@ public func !== (lhs: AnyObject?, rhs: AnyObject?) -> Bool {
 /// When adopting `Equatable`, only the `==` operator is required to be
 /// implemented.  The standard library provides an implementation for `!=`.
 public protocol Equatable {
-  /// Return true if `lhs` is equal to `rhs`.
+  /// Returns `true` if `lhs` is equal to `rhs`.
   ///
   /// **Equality implies substitutability**.  When `x == y`, `x` and
   /// `y` are interchangeable in any code that only depends on their
@@ -447,4 +451,3 @@ infix operator  |= { associativity right precedence 90 assignment }
 // example of how this operator is used, and how its use can be hidden
 // from users.
 infix operator ~> { associativity left precedence 255 }
-

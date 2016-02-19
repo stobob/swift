@@ -1,8 +1,8 @@
-//===-------- Passes.cpp - Swift Compiler SIL Pass Entrypoints ------------===//
+//===--- Passes.cpp - Swift Compiler SIL Pass Entrypoints -----------------===//
 //
 // This source file is part of the Swift.org open source project
 //
-// Copyright (c) 2014 - 2015 Apple Inc. and the Swift project authors
+// Copyright (c) 2014 - 2016 Apple Inc. and the Swift project authors
 // Licensed under Apache License v2.0 with Runtime Library Exception
 //
 // See http://swift.org/LICENSE.txt for license information
@@ -40,13 +40,13 @@ llvm::cl::opt<bool>
     SILViewCFG("sil-view-cfg", llvm::cl::init(false),
                llvm::cl::desc("Enable the sil cfg viewer pass"));
 
-llvm::cl::opt<bool>
-    SILViewGuaranteedCFG("sil-view-guaranteed-cfg", llvm::cl::init(false),
-               llvm::cl::desc("Enable the sil cfg viewer pass after diagnostics"));
+llvm::cl::opt<bool> SILViewGuaranteedCFG(
+    "sil-view-guaranteed-cfg", llvm::cl::init(false),
+    llvm::cl::desc("Enable the sil cfg viewer pass after diagnostics"));
 
-llvm::cl::opt<bool>
-    SILViewSILGenCFG("sil-view-silgen-cfg", llvm::cl::init(false),
-               llvm::cl::desc("Enable the sil cfg viewer pass before diagnostics"));
+llvm::cl::opt<bool> SILViewSILGenCFG(
+    "sil-view-silgen-cfg", llvm::cl::init(false),
+    llvm::cl::desc("Enable the sil cfg viewer pass before diagnostics"));
 
 using namespace swift;
 
@@ -197,13 +197,17 @@ void AddSSAPasses(SILPassManager &PM, OptimizationLevelKind OpLevel) {
 
   // Perform retain/release code motion and run the first ARC optimizer.
   PM.addRedundantLoadElimination();
-  PM.addDeadStoreElimination();
   PM.addCSE();
   PM.addEarlyCodeMotion();
   PM.addARCSequenceOpts();
 
   PM.addSILLinker();
 
+  // Run the devirtualizer, specializer, and inliner. If any of these
+  // makes a change we'll end up restarting the function passes on the
+  // current function (after optimizing any new callees).
+  PM.addDevirtualizer();
+  PM.addGenericSpecializer();
   switch (OpLevel) {
     case OptimizationLevelKind::HighLevel:
       // Does not inline functions with defined semantics.
@@ -244,6 +248,9 @@ void swift::runSILOptimizationPasses(SILModule &Module) {
 
   SILPassManager PM(&Module, "PreSpecialize");
 
+  // Get rid of apparently dead functions as soon as possible so that
+  // we do not spend time optimizing them.
+  PM.addDeadFunctionElimination();
   // Start by cloning functions from stdlib.
   PM.addSILLinker();
   PM.run();
@@ -251,8 +258,6 @@ void swift::runSILOptimizationPasses(SILModule &Module) {
 
   // Run two iterations of the high-level SSA passes.
   PM.setStageName("HighLevel");
-  PM.addDevirtualizer();
-  PM.addGenericSpecializer();
   AddSSAPasses(PM, OptimizationLevelKind::HighLevel);
   PM.runOneIteration();
   PM.runOneIteration();
@@ -322,6 +327,11 @@ void swift::runSILOptimizationPasses(SILModule &Module) {
   // Should be after FunctionSignatureOpts and before the last inliner.
   PM.addReleaseDevirtualizer();
 
+  // Run the devirtualizer, specializer, and inliner. If any of these
+  // makes a change we'll end up restarting the function passes on the
+  // current function (after optimizing any new callees).
+  PM.addDevirtualizer();
+  PM.addGenericSpecializer();
   PM.addLateInliner();
   AddSimplifyCFGSILCombine(PM);
   PM.addAllocBoxToStack();
@@ -335,7 +345,6 @@ void swift::runSILOptimizationPasses(SILModule &Module) {
   PM.addCSE();
   PM.addSILCombine();
   PM.addJumpThreadSimplifyCFG();
-  PM.addRedundantLoadElimination();
   PM.addDeadStoreElimination();
   PM.addCSE();
   PM.addLateCodeMotion();
@@ -452,7 +461,8 @@ descriptorsForFile(StringRef Filename,
 
   auto *RootList = cast<yaml::SequenceNode>(N);
 
-  for (auto &PMDescriptorIter : make_range(RootList->begin(), RootList->end())) {
+  for (auto &PMDescriptorIter :
+       make_range(RootList->begin(), RootList->end())) {
     PMDescriptor PM(cast<yaml::SequenceNode>(&PMDescriptorIter));
     Descriptors.push_back(std::move(PM));
   }

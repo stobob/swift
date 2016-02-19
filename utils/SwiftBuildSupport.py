@@ -1,18 +1,22 @@
-#===--- SwiftBuildSupport.py - Utilities for Swift build scripts -----------===#
+# utils/SwiftBuildSupport.py - Utilities for Swift build scripts -*- python -*-
 #
 # This source file is part of the Swift.org open source project
 #
-# Copyright (c) 2014 - 2015 Apple Inc. and the Swift project authors
+# Copyright (c) 2014 - 2016 Apple Inc. and the Swift project authors
 # Licensed under Apache License v2.0 with Runtime Library Exception
 #
 # See http://swift.org/LICENSE.txt for license information
 # See http://swift.org/CONTRIBUTORS.txt for the list of Swift project authors
-#
-#===------------------------------------------------------------------------===#
 
 from __future__ import print_function
 
-import ConfigParser
+try:
+    # Python 2
+    import ConfigParser
+except ImportError:
+    # Python 3
+    import configparser as ConfigParser
+
 import os
 import pipes
 import subprocess
@@ -65,7 +69,7 @@ def print_with_argv0(message):
 
 
 def quote_shell_command(args):
-    return " ".join([ pipes.quote(a) for a in args ])
+    return " ".join([pipes.quote(a) for a in args])
 
 
 def check_call(args, print_command=False, verbose=False):
@@ -134,7 +138,7 @@ def _get_preset_options_impl(config, substitutions, preset_name):
     for o in config.options(section_name):
         try:
             a = config.get(section_name, o)
-        except ConfigParser.InterpolationMissingOptionError, e:
+        except ConfigParser.InterpolationMissingOptionError as e:
             # e.reference contains the correctly formatted option
             missing_opts.append(e.reference)
             continue
@@ -186,13 +190,13 @@ def get_preset_options(substitutions, preset_file_names, preset_name):
                          "': " + ", ".join(missing_opts))
         sys.exit(1)
 
-    return build_script_opts + [ "--" ] + build_script_impl_opts
+    return build_script_opts + ["--"] + build_script_impl_opts
 
 
 def get_all_preset_names(preset_file_names):
     config = _load_preset_files_impl(preset_file_names)
-    return [ name[len(_PRESET_PREFIX):] for name in config.sections()
-             if name.startswith(_PRESET_PREFIX) ]
+    return [name[len(_PRESET_PREFIX):] for name in config.sections()
+            if name.startswith(_PRESET_PREFIX)]
 
 
 # A context manager for changing the current working directory.

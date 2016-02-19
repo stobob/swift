@@ -2,7 +2,7 @@
 //
 // This source file is part of the Swift.org open source project
 //
-// Copyright (c) 2014 - 2015 Apple Inc. and the Swift project authors
+// Copyright (c) 2014 - 2016 Apple Inc. and the Swift project authors
 // Licensed under Apache License v2.0 with Runtime Library Exception
 //
 // See http://swift.org/LICENSE.txt for license information
@@ -201,7 +201,6 @@ extension _ArrayBuffer {
   /// Copy the given subRange of this buffer into uninitialized memory
   /// starting at target.  Return a pointer past-the-end of the
   /// just-initialized memory.
-  @inline(never) // The copy loop blocks retain release matching.
   public func _uninitializedCopy(
     subRange: Range<Int>, target: UnsafeMutablePointer<Element>
   ) -> UnsafeMutablePointer<Element> {
@@ -230,7 +229,7 @@ extension _ArrayBuffer {
     return result
   }
 
-  /// Return a `_SliceBuffer` containing the given `subRange` of values
+  /// Returns a `_SliceBuffer` containing the given `subRange` of values
   /// from this buffer.
   public subscript(subRange: Range<Int>) -> _SliceBuffer<Element> {
     get {

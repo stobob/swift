@@ -1,21 +1,77 @@
-Latest
-------
+
+Swift 3
+-------
+
+* Curried function syntax has been removed, and now produces a compile-time
+  error.
+
+* Generic signatures can now contain superclass requirements with generic
+  parameter types, for example:
+
+  ```
+  func f<Food : Chunks<Meat>, Meat : Molerat>(f: Food, m: Meat) {}
+  ```
+
+* Section markers are created in ELF binaries through special objects during link time.
+  These objects allow for the deletion of swift.ld and the use of non-BFD linkers.
+  A new argument to swiftc is provided to select the linker used, and the gold linker
+  is set as the default for arm-based platforms.
+
+Swift 2.2
+---------
+
+* Associated types in protocols can now be specified with a new 'associatedtype'
+  declaration, to replace the use of 'typealias':
+
+    ```swift
+    protocol P {
+      associatedtype Ty
+    }
+    ```
+
+  The typealias keyword is still allowed (but deprecated and produces a warning)
+  in Swift 2.2. This warning will become an error in Swift 3.
+
+* Curried function syntax has been deprecated, and is slated to be removed in 
+  Swift 3.
 
 * The ++ and -- operators have been deprecated, and are slated to be removed in
-  Swift 3.0.  As a replacement, please use "x += 1" on integer or floating point
-  types, and "x = x.successor()" on Index types.
+  Swift 3.0.  As a replacement, please use `x += 1` on integer or floating point
+  types, and `x = x.successor()` on Index types.
+
+* The implicit tuple splat behavior in function application has been deprecated
+  and will be removed in Swift 3.0.  For example, this code:
+
+    ```swift
+    func foo(a : Int, b : Int) { ... }
+    let x = (1, b: 2)
+    foo(x)   // Warning, deprecated.
+    ```
+
+  should move to being written as:
+    ```swift
+    foo(x.0, x.b)
+    ```
+
+  For more information and rationale, see 
+  [SE-0029](https://github.com/apple/swift-evolution/blob/master/proposals/0029-remove-implicit-tuple-splat.md).
+
+* New `#file`, `#line`, `#column`, and `#function` expressions have been introduced to
+  replace the existing `__FILE__`, `__LINE__`, `__COLUMN__`, and `__FUNCTION__` symbols.
+  The `__FILE__`-style symbols have been deprecated, and will be removed in
+  Swift 3.
 
 * The operator identifier lexer grammar has been revised to simplify the rules
   for operators that start with a dot (".").  The new rule is that an operator
   that starts with a dot may contain other dots in it, but operators that start
   with some other character may not contain dots.  For example:
- 
-    ```
+
+    ```swift
     x....foo   --> "x" "...." "foo"
     x&%^.foo   --> "x" "&%^"  ".foo"
     ```
 
-  This eliminates a special case for the ..< operator, folding it into a simple
+  This eliminates a special case for the `..<` operator, folding it into a simple
   and consistent rule.
 
 * The "C-style for loop", which is spelled `for init; comparison; increment {}`
@@ -33,7 +89,7 @@ Latest
   are specified.
 
 * Designated class initializers declared as failable or throwing may now
-  return nil or throw an error, respectively, before the object has been
+  return `nil` or throw an error, respectively, before the object has been
   fully initialized. For example:
 
     ```swift
@@ -85,11 +141,85 @@ Latest
 * Argument labels and parameter names can now be any keyword except
   `var`, `let`, or `inout`. For example:
 
+   ```swift
     NSURLProtectionSpace(host: "somedomain.com", port: 443, protocol: "https", realm: "Some Domain", authenticationMethod: "Basic")
+   ```
 
   would previously have required `protocol` to be surrounded in
   back-ticks. For more information, see
   [SE-0001](https://github.com/apple/swift-evolution/blob/master/proposals/0001-keywords-as-argument-labels.md).
+
+* Tuples (up to arity 6) whose elements are all `Comparable` or `Equatable` now
+  implement the full set of comparison/equality operators. The comparison
+  operators are defined in terms of [lexicographical order][]. See [SE-0015][]
+  for more information.
+
+[lexicographical order]: https://en.wikipedia.org/wiki/Lexicographical_order
+[SE-0015]: https://github.com/apple/swift-evolution/blob/master/proposals/0015-tuple-comparison-operators.md
+
+* The `@objc(SomeName)` attribute is now supported on enums and enum cases to
+  rename the generated Objective-C declaration.
+
+  **(rdar://problem/21930334)**
+
+* When referencing a function or initializer, one can provide the
+  complete name, including argument labels. For example:
+
+   ```swift
+      let fn1 = someView.insertSubview(_:at:)
+      let fn2 = someView.insertSubview(_:aboveSubview:)
+
+      let buttonFactory = UIButton.init(type:)
+   ```
+   
+  For more information, see [SE-0021](https://github.com/apple/swift-evolution/blob/master/proposals/0021-generalized-naming.md).
+
+* There is a new build configuration function, `#if swift(>=x.y)`, which
+  tests if the current Swift language version is at least `x.y`. This
+  allows you to conditionally compile code for multiple language
+  versions in the same file, even with different syntax, by deactivating
+  parsing in inactive code blocks. For example:
+
+  ```swift
+  #if swift(>=2.2)
+    // Only this code will be parsed in Swift 3
+    func foo(x: Int) -> (y: Int) -> () {}
+  #else
+    // This code is ignored entirely.
+    func foo(x: Int)(y: Int) {}
+  #endif
+  ```
+
+  For more information, see [SE-0020](https://github.com/apple/swift-evolution/blob/master/proposals/0020-if-swift-version.md).
+
+* The Objective-C selector of a Swift method can now be determined
+  directly with the #selector expression, e.g.,:
+
+   ```swift
+      let sel = #selector(insertSubview(_:aboveSubview:)) // sel has type Selector
+   ```
+   
+  Along with this change, the use of string literals as selectors has
+  been deprecated, e.g.,
+
+  ```swift
+      let sel: Selector = "insertSubview:aboveSubview:"
+  ```
+   
+  Generally, such string literals should be replaced with uses of
+  `#selector`, and the compiler will provide Fix-Its that use
+  `#selector`. In cases where they is not possible (e.g., when referring
+  to the getter of a property), one can still directly construct
+  selectors, e.g.,:
+
+  ```swift
+      let sel = Selector("propertyName")
+  ```
+   
+  Note that the compiler is now checking the string literals used to
+  construct Selectors to ensure that they are well-formed Objective-C
+  selectors and that there is an `@objc` method with that selector.
+
 
 2015-09-17 [Xcode 7.1, Swift 2.1]
 ----------
@@ -1374,7 +1504,7 @@ Latest
   unique elements with full value semantics. It bridges with `NSSet`, providing
   functionality analogous to `Array` and `Dictionary`. **(14661754)**
 
-* The `if–let` construct has been expanded to allow testing multiple optionals
+* The `if-let` construct has been expanded to allow testing multiple optionals
   and guarding conditions in a single `if` (or `while`) statement using syntax
   similar to generic constraints:
 
@@ -1388,7 +1518,7 @@ Latest
   conditions, without introducing undesirable nesting (for instance, to avoid
   the optional unwrapping _"pyramid of doom"_).
 
-  Further, `if–let` now also supports a single leading boolean condition along
+  Further, `if-let` now also supports a single leading boolean condition along
   with optional binding `let` clauses. For example:
 
   ```swift
@@ -1398,7 +1528,7 @@ Latest
 
   **(19797158, 19382942)**
 
-* The `if–let` syntax has been extended to support a single leading boolean
+* The `if-let` syntax has been extended to support a single leading boolean
   condition along with optional binding `let` clauses.
 
   For example:
@@ -1748,9 +1878,9 @@ Latest
     }
     ```
 
-  In the current implementation, struct and enum initializers can return nil
+  In the current implementation, struct and enum initializers can return `nil`
   at any point inside the initializer, but class initializers can only return
-  nil after all of the stored properties of the object have been initialized
+  `nil` after all of the stored properties of the object have been initialized
   and `self.init` or `super.init` has been called. If `self.init` or
   `super.init` is used to delegate to a failable initializer, then the `nil`
   return is implicitly propagated through the current initializer if the
@@ -3897,9 +4027,9 @@ Latest
   themselves.
 
   Overall, a property now may either be "stored" (the default), "computed"
-  (have a `get:` and optionally a `set:` specifier), or a observed
+  (have a `get:` and optionally a `set:` specifier), or an observed
   (`willSet`/`didSet`) property.  It is not possible to have a custom getter
-  or setter on a observed property, since they have storage.
+  or setter on an observed property, since they have storage.
 
   Two known-missing bits are:
   - **(rdar://problem/15920332) didSet/willSet variables need to allow initializers**
@@ -5179,7 +5309,7 @@ Latest
     ```
 
   Swift also supports a special form of weak reference, called `[unowned]`, for
-  references that should never be nil but are required to be weak to break
+  references that should never be `nil` but are required to be weak to break
   cycles, such as parent or sibling references. Accessing an `[unowned]`
   reference asserts that the reference is still valid and implicitly promotes
   the loaded reference to a strong reference, so it does not need to be loaded

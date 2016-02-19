@@ -2,9 +2,10 @@
 
 // CHECK-LABEL: sil hidden @_TF15optional_lvalue22assign_optional_lvalueFTRGSqSi_Si_T_
 // CHECK:         [[SHADOW:%.*]] = alloc_box $Optional<Int>
+// CHECK:         [[PB:%.*]] = project_box [[SHADOW]]
 // CHECK:         [[PRECOND:%.*]] = function_ref @_TFs30_diagnoseUnexpectedNilOptionalFT_T_
 // CHECK:         apply [[PRECOND]]()
-// CHECK:         [[PAYLOAD:%.*]] = unchecked_take_enum_data_addr [[SHADOW]]#1 : $*Optional<Int>, #Optional.Some!enumelt.1
+// CHECK:         [[PAYLOAD:%.*]] = unchecked_take_enum_data_addr [[PB]] : $*Optional<Int>, #Optional.Some!enumelt.1
 // CHECK:         assign {{%.*}} to [[PAYLOAD]]
 func assign_optional_lvalue(inout x: Int?, _ y: Int) {
   x! = y
@@ -12,9 +13,10 @@ func assign_optional_lvalue(inout x: Int?, _ y: Int) {
 
 // CHECK-LABEL: sil hidden @_TF15optional_lvalue17assign_iuo_lvalueFTRGSQSi_Si_T_
 // CHECK:         [[SHADOW:%.*]] = alloc_box $ImplicitlyUnwrappedOptional<Int>
+// CHECK:         [[PB:%.*]] = project_box [[SHADOW]]
 // CHECK:         [[PRECOND:%.*]] = function_ref @_TFs30_diagnoseUnexpectedNilOptionalFT_T_
 // CHECK:         apply [[PRECOND]]()
-// CHECK:         [[PAYLOAD:%.*]] = unchecked_take_enum_data_addr [[SHADOW]]#1 : $*ImplicitlyUnwrappedOptional<Int>, #ImplicitlyUnwrappedOptional.Some!enumelt.1
+// CHECK:         [[PAYLOAD:%.*]] = unchecked_take_enum_data_addr [[PB]] : $*ImplicitlyUnwrappedOptional<Int>, #ImplicitlyUnwrappedOptional.Some!enumelt.1
 // CHECK:         assign {{%.*}} to [[PAYLOAD]]
 func assign_iuo_lvalue(inout x: Int!, _ y: Int) {
   x! = y
@@ -31,7 +33,8 @@ struct S {
 
 // CHECK-LABEL: sil hidden @_TF15optional_lvalue26assign_iuo_lvalue_implicitFTRGSQVS_1S_Si_T_
 // CHECK:         [[SHADOW:%.*]] = alloc_box
-// CHECK:         [[SOME:%.*]] = unchecked_take_enum_data_addr [[SHADOW]]#1
+// CHECK:         [[PB:%.*]] = project_box [[SHADOW]]
+// CHECK:         [[SOME:%.*]] = unchecked_take_enum_data_addr [[PB]]
 // CHECK:         [[X:%.*]] = struct_element_addr [[SOME]]
 func assign_iuo_lvalue_implicit(inout s: S!, _ y: Int) {
   s.x = y
@@ -40,7 +43,7 @@ func assign_iuo_lvalue_implicit(inout s: S!, _ y: Int) {
 // CHECK-LABEL: sil hidden @_TF15optional_lvalue35assign_optional_lvalue_reabstractedFTRGSqFSiSi_FSiSi_T_
 // CHECK:         [[REABSTRACT:%.*]] = function_ref @_TTRXFo_dSi_dSi_XFo_iSi_iSi_
 // CHECK:         [[REABSTRACTED:%.*]] = partial_apply [[REABSTRACT]]
-// CHECK:         assign [[REABSTRACTED]] to {{%.*}} : $*@callee_owned (@out Int, @in Int) -> ()
+// CHECK:         assign [[REABSTRACTED]] to {{%.*}} : $*@callee_owned (@in Int) -> @out Int
 func assign_optional_lvalue_reabstracted(inout x: (Int -> Int)?,
                                          _ y: Int -> Int) {
   x! = y

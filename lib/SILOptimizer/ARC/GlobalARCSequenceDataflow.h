@@ -2,7 +2,7 @@
 //
 // This source file is part of the Swift.org open source project
 //
-// Copyright (c) 2014 - 2015 Apple Inc. and the Swift project authors
+// Copyright (c) 2014 - 2016 Apple Inc. and the Swift project authors
 // Licensed under Apache License v2.0 with Runtime Library Exception
 //
 // See http://swift.org/LICENSE.txt for license information
@@ -15,7 +15,7 @@
 
 #include "RefCountState.h"
 #include "swift/SILOptimizer/Analysis/PostOrderAnalysis.h"
-#include "ProgramTerminationAnalysis.h"
+#include "swift/SILOptimizer/Analysis/ProgramTerminationAnalysis.h"
 #include "swift/Basic/BlotMapVector.h"
 #include "swift/Basic/NullablePtr.h"
 #include "llvm/ADT/MapVector.h"
@@ -60,6 +60,9 @@ private:
   /// The map from dataflow terminating increment -> decrement dataflow state.
   BlotMapVector<SILInstruction *, BottomUpRefCountState> &IncToDecStateMap;
 
+  llvm::BumpPtrAllocator Allocator;
+  ImmutablePointerSetFactory<SILInstruction> SetFactory;
+
   /// Stashed BB information.
   ARCBBStateInfo *BBStateInfo;
 
@@ -98,7 +101,7 @@ private:
 
   bool processBBBottomUp(ARCBBState &BBState,
                          bool FreezeOwnedArgEpilogueReleases);
-
+  bool processBBTopDown(ARCBBState &BBState);
   void computePostDominatingConsumedArgMap();
 
   llvm::Optional<ARCBBStateInfoHandle> getBottomUpBBState(SILBasicBlock *BB);

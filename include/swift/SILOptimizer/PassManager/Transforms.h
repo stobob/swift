@@ -1,8 +1,8 @@
-//===-- Transforms.h - Swift Transformations  -------------------*- C++ -*-===//
+//===--- Transforms.h - Swift Transformations  ------------------*- C++ -*-===//
 //
 // This source file is part of the Swift.org open source project
 //
-// Copyright (c) 2014 - 2015 Apple Inc. and the Swift project authors
+// Copyright (c) 2014 - 2016 Apple Inc. and the Swift project authors
 // Licensed under Apache License v2.0 with Runtime Library Exception
 //
 // See http://swift.org/LICENSE.txt for license information
@@ -101,6 +101,10 @@ namespace swift {
     void notifyPassManagerOfFunction(SILFunction *F) {
       PM->addFunctionToWorklist(F);
     }
+
+    /// \brief Reoptimize the current function by restarting the pass
+    /// pipeline on it.
+    void restartPassPipeline() { PM->restartWithCurrentFunction(this); }
 
   protected:
     SILFunction *getFunction() { return F; }

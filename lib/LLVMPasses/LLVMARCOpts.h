@@ -1,14 +1,16 @@
-//===- LLVMARCOpts.h - LLVM level ARC Opts Utility Declarations -*- C++ -*-===//
+//===--- LLVMARCOpts.h - LLVM level ARC Opts Util. Declarations -*- C++ -*-===//
 //
 // This source file is part of the Swift.org open source project
 //
-// Copyright (c) 2014 - 2015 Apple Inc. and the Swift project authors
+// Copyright (c) 2014 - 2016 Apple Inc. and the Swift project authors
 // Licensed under Apache License v2.0 with Runtime Library Exception
 //
 // See http://swift.org/LICENSE.txt for license information
 // See http://swift.org/CONTRIBUTORS.txt for the list of Swift project authors
 //
 //===----------------------------------------------------------------------===//
+#ifndef SWIFT_LLVMPASSES_LLVMARCOPTS_H
+#define SWIFT_LLVMPASSES_LLVMARCOPTS_H
 
 #include "swift/Basic/LLVM.h"
 #include "llvm/IR/Instructions.h"
@@ -117,3 +119,5 @@ inline RT_Kind classifyInstruction(const llvm::Instruction &I) {
 }
 
 } // end namespace swift
+#endif
+

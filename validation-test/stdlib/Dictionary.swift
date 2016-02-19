@@ -12,6 +12,16 @@
 
 import Darwin
 import StdlibUnittest
+import StdlibCollectionUnittest
+
+// Also import modules which are used by StdlibUnittest internally. This
+// workaround is needed to link all required libraries in case we compile
+// StdlibUnittest with -sil-serialize-all.
+import SwiftPrivate
+#if _runtime(_ObjC)
+import ObjectiveC
+#endif
+
 import Foundation
 import StdlibUnittestFoundationExtras
 
@@ -2876,7 +2886,7 @@ DictionaryTestSuite.test("BridgingRoundtrip") {
 // NSDictionary -> Dictionary implicit conversion.
 //===---
 
-DictionaryTestSuite.test("NSDictionaryToDictionaryCoversion") {
+DictionaryTestSuite.test("NSDictionaryToDictionaryConversion") {
   let keys = [ 10, 20, 30 ].map { TestObjCKeyTy($0) }
   let values = [ 1010, 1020, 1030 ].map { TestObjCValueTy($0) }
 
@@ -2892,7 +2902,7 @@ DictionaryTestSuite.test("NSDictionaryToDictionaryCoversion") {
   assert(equalsUnordered(pairs, [ (10, 1010), (20, 1020), (30, 1030) ]))
 }
 
-DictionaryTestSuite.test("DictionaryToNSDictionaryCoversion") {
+DictionaryTestSuite.test("DictionaryToNSDictionaryConversion") {
   var d = Dictionary<TestObjCKeyTy, TestObjCValueTy>(minimumCapacity: 32)
   d[TestObjCKeyTy(10)] = TestObjCValueTy(1010)
   d[TestObjCKeyTy(20)] = TestObjCValueTy(1020)

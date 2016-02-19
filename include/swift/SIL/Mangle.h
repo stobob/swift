@@ -2,7 +2,7 @@
 //
 // This source file is part of the Swift.org open source project
 //
-// Copyright (c) 2014 - 2015 Apple Inc. and the Swift project authors
+// Copyright (c) 2014 - 2016 Apple Inc. and the Swift project authors
 // Licensed under Apache License v2.0 with Runtime Library Exception
 //
 // See http://swift.org/LICENSE.txt for license information
@@ -13,7 +13,6 @@
 #ifndef SWIFT_SIL_MANGLE_H
 #define SWIFT_SIL_MANGLE_H
 
-#include "llvm/ADT/DenseMap.h"
 #include "swift/Basic/Demangle.h"
 #include "swift/Basic/NullablePtr.h"
 #include "swift/AST/Decl.h"
@@ -21,6 +20,8 @@
 #include "swift/AST/ResilienceExpansion.h"
 #include "swift/AST/Types.h"
 #include "swift/SIL/SILFunction.h"
+#include "llvm/ADT/DenseMap.h"
+#include "llvm/Support/TrailingObjects.h"
 
 namespace swift {
 
@@ -64,25 +65,25 @@ protected:
   void mangleKind() {
     switch (Kind) {
     case SpecializationKind::Generic:
-      M.manglePrefix("g");
+      M.append("g");
       break;
     case SpecializationKind::FunctionSignature:
-      M.manglePrefix("f");
+      M.append("f");
       break;
     }
   }
 
   void manglePass() {
-    M.manglePrefix(encodeSpecializationPass(Pass));
+    M.append(encodeSpecializationPass(Pass));
   }
 
   void mangleSpecializationPrefix() {
-    M.manglePrefix("_TTS");
+    M.append("_TTS");
   }
 
   void mangleFunctionName() {
-    M.manglePrefix("_");
-    M.manglePrefix(Function->getName());
+    M.append("_");
+    M.appendSymbol(Function->getName());
   }
 };
 
@@ -90,7 +91,7 @@ protected:
 /// specific specialization kind.
 template <typename SubType>
 class SpecializationMangler : public SpecializationManglerBase {
-  SubType *asImpl() { return reinterpret_cast<SubType *>(this); }
+  SubType *asImpl() { return static_cast<SubType *>(this); }
 public:
 
   ~SpecializationMangler() = default;
@@ -138,6 +139,18 @@ class FunctionSignatureSpecializationMangler
 
   friend class SpecializationMangler<FunctionSignatureSpecializationMangler>;
 
+  using ReturnValueModifierIntBase = uint16_t;
+  enum class ReturnValueModifier : ReturnValueModifierIntBase {
+    // Option Space 4 bits (i.e. 16 options).
+    Unmodified=0,
+    First_Option=0, Last_Option=31,
+
+    // Option Set Space. 12 bits (i.e. 12 option).
+    Dead=32,
+    OwnedToUnowned=64,
+    First_OptionSetEntry=32, LastOptionSetEntry=32768,
+  };
+
   // We use this private typealias to make it easy to expand ArgumentModifier's
   // size if we need to.
   using ArgumentModifierIntBase = uint16_t;
@@ -161,6 +174,8 @@ class FunctionSignatureSpecializationMangler
                             NullablePtr<SILInstruction>>;
   llvm::SmallVector<ArgInfo, 8> Args;
 
+  ReturnValueModifierIntBase ReturnValue;
+
 public:
   FunctionSignatureSpecializationMangler(SpecializationPass Pass,
                                          Mangle::Mangler &M, SILFunction *F);
@@ -172,6 +187,7 @@ public:
   void setArgumentSROA(unsigned ArgNo);
   void setArgumentBoxToValue(unsigned ArgNo);
   void setArgumentBoxToStack(unsigned ArgNo);
+  void setReturnValueOwnedToUnowned();
 
 private:
   void mangleSpecialization();
@@ -180,6 +196,7 @@ private:
   void mangleClosureProp(ThinToThickFunctionInst *TTTFI);
   void mangleArgument(ArgumentModifierIntBase ArgMod,
                       NullablePtr<SILInstruction> Inst);
+  void mangleReturnValue(ReturnValueModifierIntBase RetMod);
 };
 
 } // end namespace swift

@@ -1,8 +1,8 @@
-//===--- GlobalLoopARCSequenceDataflow.h ----------------------------------===//
+//===--- GlobalLoopARCSequenceDataflow.h ------------------------*- C++ -*-===//
 //
 // This source file is part of the Swift.org open source project
 //
-// Copyright (c) 2014 - 2015 Apple Inc. and the Swift project authors
+// Copyright (c) 2014 - 2016 Apple Inc. and the Swift project authors
 // Licensed under Apache License v2.0 with Runtime Library Exception
 //
 // See http://swift.org/LICENSE.txt for license information
@@ -14,10 +14,11 @@
 #define SWIFT_SILOPTIMIZER_PASSMANAGER_ARC_GLOBALLOOPARCSEQUENCEDATAFLOW_H
 
 #include "RefCountState.h"
-#include "ProgramTerminationAnalysis.h"
 #include "swift/SILOptimizer/Analysis/LoopRegionAnalysis.h"
+#include "swift/SILOptimizer/Analysis/ProgramTerminationAnalysis.h"
 #include "swift/Basic/BlotMapVector.h"
 #include "swift/Basic/NullablePtr.h"
+#include "swift/Basic/ImmutablePointerSet.h"
 #include "llvm/ADT/MapVector.h"
 #include "llvm/ADT/Optional.h"
 
@@ -37,6 +38,9 @@ class ARCRegionState;
 class LoopARCSequenceDataflowEvaluator {
   /// The bump ptr allocator that is used to allocate memory in the allocator.
   llvm::BumpPtrAllocator Allocator;
+
+  /// The factory that we use to generate immutable pointer sets.
+  ImmutablePointerSetFactory<SILInstruction> SetFactory;
 
   /// The SILFunction that we are applying the dataflow to.
   SILFunction &F;
@@ -90,9 +94,21 @@ public:
   bool runOnLoop(const LoopRegion *R, bool FreezeOwnedArgEpilogueReleases,
                  bool RecomputePostDomReleases);
 
+  /// Summarize the subregions of \p R that are blocks.
+  ///
+  /// We assume that all subregions that are loops have already been summarized
+  /// since we are processing bottom up through the loop nest hierarchy.
+  void summarizeSubregionBlocks(const LoopRegion *R);
+
   /// Summarize the contents of the loop so that loops further up the loop tree
   /// can reason about the loop.
   void summarizeLoop(const LoopRegion *R);
+
+  /// Add \p I to the interesting instruction list of its parent block.
+  void addInterestingInst(SILInstruction *I);
+
+  /// Remove \p I from the interesting instruction list of its parent block.
+  void removeInterestingInst(SILInstruction *I);
 
 private:
   /// Merge in the BottomUp state of any successors of DataHandle.getBB() into

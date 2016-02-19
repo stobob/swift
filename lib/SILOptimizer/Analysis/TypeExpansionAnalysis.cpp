@@ -1,8 +1,8 @@
-//===---------- TypeExpansionAnalysis.cpp - Type Expansion Analysis -------===//
+//===--- TypeExpansionAnalysis.cpp - Type Expansion Analysis --------------===//
 //
 // This source file is part of the Swift.org open source project
 //
-// Copyright (c) 2014 - 2015 Apple Inc. and the Swift project authors
+// Copyright (c) 2014 - 2016 Apple Inc. and the Swift project authors
 // Licensed under Apache License v2.0 with Runtime Library Exception
 //
 // See http://swift.org/LICENSE.txt for license information
@@ -24,8 +24,7 @@ using namespace swift;
 static const int TypeExpansionAnalysisMaxCacheSize = 4096;
 
 const ProjectionPathList &
-TypeExpansionAnalysis::getTypeExpansionProjectionPaths(SILType B, SILModule *Mod,
-                                                       TEKind Kind) {
+TypeExpansionAnalysis::getTypeExpansion(SILType B, SILModule *Mod, TEKind Kind){
   // Which cache we should be looking up.
   bool IsLeaf = Kind == TEKind::TELeaf;
   TypeExpansionMap &Cache = IsLeaf ? TELeafCache : TENodeCache;

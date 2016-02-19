@@ -139,7 +139,7 @@ define void @objc_retain_release_opt(%objc_object* %P, i32* %IP) {
   ret void
 }
 
-; CHECK-LABEL: define void @swift_fixLifetimeTest
+; CHECK-LABEL: define{{( protected)?}} void @swift_fixLifetimeTest
 ; CHECK: swift_retain
 ; CHECK: swift_fixLifetime
 ; CHECK: swift_release
@@ -234,7 +234,7 @@ define void @dont_optimize_retain_unowned(%swift.refcounted* %A) {
   %value = bitcast %swift.refcounted* %A to i64**
 
   %L1 = load i64*, i64** %value, align 8
-  ; Use of a potential garbabe address from a load of %A.
+  ; Use of a potential garbage address from a load of %A.
   %L2 = load i64, i64* %L1, align 8
 
   tail call void @swift_release(%swift.refcounted* %A)

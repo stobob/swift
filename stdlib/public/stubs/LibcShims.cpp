@@ -2,7 +2,7 @@
 //
 // This source file is part of the Swift.org open source project
 //
-// Copyright (c) 2014 - 2015 Apple Inc. and the Swift project authors
+// Copyright (c) 2014 - 2016 Apple Inc. and the Swift project authors
 // Licensed under Apache License v2.0 with Runtime Library Exception
 //
 // See http://swift.org/LICENSE.txt for license information
@@ -28,7 +28,7 @@ namespace swift {
 
 void _swift_stdlib_free(void *ptr) { free(ptr); }
 
-int _swift_stdlib_putchar(int c) { return putchar(c); }
+int _swift_stdlib_putchar_unlocked(int c) { return putchar_unlocked(c); }
 
 __swift_size_t _swift_stdlib_strlen(const char *s) { return strlen(s); }
 

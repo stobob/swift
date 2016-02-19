@@ -2,7 +2,7 @@
 //
 // This source file is part of the Swift.org open source project
 //
-// Copyright (c) 2014 - 2015 Apple Inc. and the Swift project authors
+// Copyright (c) 2014 - 2016 Apple Inc. and the Swift project authors
 // Licensed under Apache License v2.0 with Runtime Library Exception
 //
 // See http://swift.org/LICENSE.txt for license information
@@ -23,7 +23,7 @@
 #include "swift/AST/DiagnosticsClangImporter.h"
 #include "swift/AST/Module.h"
 #include "swift/AST/NameLookup.h"
-#include "swift/AST/Pattern.h"
+#include "swift/AST/ParameterList.h"
 #include "swift/AST/Types.h"
 #include "swift/ClangImporter/ClangModule.h"
 #include "swift/Parse/Token.h"
@@ -39,6 +39,7 @@
 #include "llvm/ADT/StringExtras.h"
 
 using namespace swift;
+using namespace importer;
 
 /// Given that a type is the result of a special typedef import, was
 /// it originally a CF pointer?
@@ -182,7 +183,7 @@ namespace {
                               ImportHint hint = ImportHint::None)
       : AbstractType(type), Hint(hint) {}
 
-    /*implicit*/ ImportResult(TypeBase *type = nullptr,
+    /*implicit*/ ImportResult(TypeBase *type,
                               ImportHint hint = ImportHint::None)
       : AbstractType(type), Hint(hint) {}
 
@@ -330,7 +331,10 @@ namespace {
             pointee->getDecl()->getName() == "_NSZone") {
           Identifier Id_ObjectiveC = Impl.SwiftContext.Id_ObjectiveC;
           Module *objCModule = Impl.SwiftContext.getLoadedModule(Id_ObjectiveC);
-          Type wrapperTy = Impl.getNamedSwiftType(objCModule, "NSZone");
+          Type wrapperTy = Impl.getNamedSwiftType(
+                             objCModule,
+                             Impl.SwiftContext.getSwiftName(
+                               KnownFoundationEntity::NSZone));
           if (wrapperTy)
             return wrapperTy;
         }
@@ -564,7 +568,8 @@ namespace {
         case MappedTypeNameKind::DefineAndUse:
           break;
         case MappedTypeNameKind::DefineOnly:
-          mappedType = cast<TypeAliasDecl>(decl)->getUnderlyingType();
+          if (auto typealias = dyn_cast<TypeAliasDecl>(decl))
+            mappedType = typealias->getUnderlyingType();
           break;
         }
 
@@ -654,8 +659,8 @@ namespace {
 
     ImportResult VisitEnumType(const clang::EnumType *type) {
       auto clangDecl = type->getDecl();
-      switch (Impl.classifyEnum(Impl.getClangPreprocessor(), clangDecl)) {
-      case ClangImporter::Implementation::EnumKind::Constants: {
+      switch (Impl.getEnumKind(clangDecl)) {
+      case EnumKind::Constants: {
         auto clangDef = clangDecl->getDefinition();
         // Map anonymous enums with no fixed underlying type to Int /if/
         // they fit in an Int32. If not, this mapping isn't guaranteed to be
@@ -668,9 +673,9 @@ namespace {
         // Import the underlying integer type.
         return Visit(clangDecl->getIntegerType());
       }
-      case ClangImporter::Implementation::EnumKind::Enum:
-      case ClangImporter::Implementation::EnumKind::Unknown:
-      case ClangImporter::Implementation::EnumKind::Options: {
+      case EnumKind::Enum:
+      case EnumKind::Unknown:
+      case EnumKind::Options: {
         auto decl = dyn_cast_or_null<TypeDecl>(Impl.importDecl(clangDecl));
         if (!decl)
           return nullptr;
@@ -722,11 +727,14 @@ namespace {
         }
 
         if (imported->hasName() &&
-            imported->getName().str() == "NSString") {
+            imported->getName()
+              == Impl.SwiftContext.getSwiftId(KnownFoundationEntity::NSString)){
           return { importedType, ImportHint::NSString };
         }
 
-        if (imported->hasName() && imported->getName().str() == "NSArray") {
+        if (imported->hasName() &&
+            imported->getName()
+              == Impl.SwiftContext.getSwiftId(KnownFoundationEntity::NSArray)) {
           // If we have type arguments, import them.
           ArrayRef<clang::QualType> typeArgs = type->getTypeArgs();
           if (typeArgs.size() == 1) {
@@ -742,7 +750,10 @@ namespace {
           return { importedType, ImportHint(ImportHint::NSArray, Type()) };
         }
 
-        if (imported->hasName() && imported->getName().str() == "NSDictionary") {
+        if (imported->hasName() &&
+            imported->getName()
+              == Impl.SwiftContext.getSwiftId(
+                   KnownFoundationEntity::NSDictionary)) {
           // If we have type arguments, import them.
           ArrayRef<clang::QualType> typeArgs = type->getTypeArgs();
           if (typeArgs.size() == 2) {
@@ -769,7 +780,9 @@ namespace {
                    ImportHint(ImportHint::NSDictionary, Type(), Type()) };
         }
 
-        if (imported->hasName() && imported->getName().str() == "NSSet") {
+        if (imported->hasName() &&
+            imported->getName()
+              == Impl.SwiftContext.getSwiftId(KnownFoundationEntity::NSSet)) {
           // If we have type arguments, import them.
           ArrayRef<clang::QualType> typeArgs = type->getTypeArgs();
           if (typeArgs.size() == 1) {
@@ -953,7 +966,8 @@ static Type adjustTypeForConcreteImport(ClangImporter::Implementation &impl,
       return Type();
 
     // FIXME: Avoid string comparison by caching this identifier.
-    if (elementClass->getName().str() != "NSError")
+    if (elementClass->getName().str() !=
+          impl.SwiftContext.getSwiftName(KnownFoundationEntity::NSError))
       return Type();
 
     Module *foundationModule = impl.tryLoadFoundationModule();
@@ -962,7 +976,10 @@ static Type adjustTypeForConcreteImport(ClangImporter::Implementation &impl,
           != elementClass->getModuleContext()->getName())
       return Type();
 
-    return impl.getNamedSwiftType(foundationModule, "NSErrorPointer");
+    return impl.getNamedSwiftType(
+            foundationModule,
+            impl.SwiftContext.getSwiftName(
+              KnownFoundationEntity::NSErrorPointer));
   };
   if (Type result = maybeImportNSErrorPointer())
     return result;
@@ -1230,10 +1247,6 @@ Type ClangImporter::Implementation::importPropertyType(
        const clang::ObjCPropertyDecl *decl,
        bool isFromSystemModule) {
   OptionalTypeKind optionality = OTK_ImplicitlyUnwrappedOptional;
-  if (auto info = getKnownObjCProperty(decl)) {
-    if (auto nullability = info->getNullability())
-      optionality = translateNullability(*nullability);
-  }
 
   bool allowNSUIntegerAsInt = isFromSystemModule;
   if (allowNSUIntegerAsInt)
@@ -1300,13 +1313,9 @@ static Type applyNoEscape(Type type) {
 ///
 /// \param knownNonNull Whether a function- or method-level "nonnull" attribute
 /// applies to this parameter.
-///
-/// \param knownNullability When API notes describe the nullability of this
-/// parameter, that nullability.
 static OptionalTypeKind getParamOptionality(
                           const clang::ParmVarDecl *param,
-                          bool knownNonNull,
-                          Optional<clang::NullabilityKind> knownNullability) {
+                          bool knownNonNull) {
   auto &clangCtx = param->getASTContext();
 
   // If nullability is available on the type, use it.
@@ -1318,24 +1327,17 @@ static OptionalTypeKind getParamOptionality(
   if (knownNonNull || param->hasAttr<clang::NonNullAttr>())
     return OTK_None;
 
-  // If API notes gives us nullability, use that.
-  if (knownNullability)
-    return ClangImporter::Implementation::translateNullability(
-             *knownNullability);
-
   // Default to implicitly unwrapped optionals.
   return OTK_ImplicitlyUnwrappedOptional;
 }
 
-Type ClangImporter::Implementation::importFunctionType(
-       const clang::FunctionDecl *clangDecl,
-       clang::QualType resultType,
-       ArrayRef<const clang::ParmVarDecl *> params,
-       bool isVariadic, bool isNoReturn,
-       bool isFromSystemModule,
-       bool hasCustomName,
-       SmallVectorImpl<Pattern*> &bodyPatterns,
-       DeclName &name) {
+Type ClangImporter::Implementation::
+importFunctionType(const clang::FunctionDecl *clangDecl,
+                   clang::QualType resultType,
+                   ArrayRef<const clang::ParmVarDecl *> params,
+                   bool isVariadic, bool isNoReturn,
+                   bool isFromSystemModule, bool hasCustomName,
+                   ParameterList *&parameterList, DeclName &name) {
 
   bool allowNSUIntegerAsInt = isFromSystemModule;
   if (allowNSUIntegerAsInt) {
@@ -1353,16 +1355,9 @@ Type ClangImporter::Implementation::importFunctionType(
       clangDecl->hasAttr<clang::CFReturnsNotRetainedAttr>()));
 
   // Check if we know more about the type from our whitelists.
-  Optional<api_notes::GlobalFunctionInfo> knownFn;
-  if (auto knownFnTmp = getKnownGlobalFunction(clangDecl))
-    if (knownFnTmp->NullabilityAudited)
-      knownFn = knownFnTmp;
-
   OptionalTypeKind OptionalityOfReturn;
   if (clangDecl->hasAttr<clang::ReturnsNonNullAttr>()) {
     OptionalityOfReturn = OTK_None;
-  } else if (knownFn) {
-    OptionalityOfReturn = translateNullability(knownFn->getReturnTypeInfo());
   } else {
     OptionalityOfReturn = OTK_ImplicitlyUnwrappedOptional;
   }
@@ -1379,10 +1374,7 @@ Type ClangImporter::Implementation::importFunctionType(
     return Type();
 
   // Import the parameters.
-  SmallVector<TupleTypeElt, 4> swiftArgParams;
-  SmallVector<TupleTypeElt, 4> swiftBodyParams;
-  SmallVector<TuplePatternElt, 4> argPatternElts;
-  SmallVector<TuplePatternElt, 4> bodyPatternElts;
+  SmallVector<ParamDecl*, 4> parameters;
   unsigned index = 0;
   llvm::SmallBitVector nonNullArgs = getNonNullArgs(clangDecl, params);
   ArrayRef<Identifier> argNames = name.getArgumentNames();
@@ -1395,11 +1387,7 @@ Type ClangImporter::Implementation::importFunctionType(
 
     // Check nullability of the parameter.
     OptionalTypeKind OptionalityOfParam
-      = getParamOptionality(param, !nonNullArgs.empty() && nonNullArgs[index],
-                            knownFn
-                              ? Optional<clang::NullabilityKind>(
-                                  knownFn->getParamTypeInfo(index))
-                              : None);
+      = getParamOptionality(param, !nonNullArgs.empty() && nonNullArgs[index]);
 
     ImportTypeKind importKind = ImportTypeKind::Parameter;
     if (param->hasAttr<clang::CFReturnsRetainedAttr>())
@@ -1433,72 +1421,46 @@ Type ClangImporter::Implementation::importFunctionType(
     if (index < argNames.size())
       name = argNames[index];
 
-    // Compute the pattern to put into the body.
-    Pattern *bodyPattern;
     // It doesn't actually matter which DeclContext we use, so just use the
     // imported header unit.
     auto bodyVar
       = createDeclWithClangNode<ParamDecl>(param,
                                      /*IsLet*/ true,
-                                     SourceLoc(), name,
+                                     SourceLoc(), SourceLoc(), name,
                                      importSourceLoc(param->getLocation()),
                                      bodyName, swiftParamTy, 
                                      ImportedHeaderUnit);
 
-    if (addNoEscapeAttr) {
+    if (addNoEscapeAttr)
       bodyVar->getAttrs().add(
         new (SwiftContext) NoEscapeAttr(/*IsImplicit=*/false));
-    }
 
-    bodyPattern = new (SwiftContext) NamedPattern(bodyVar);
-    bodyPattern->setType(swiftParamTy);
-    bodyPattern
-      = new (SwiftContext) TypedPattern(bodyPattern,
-                                        TypeLoc::withoutLoc(swiftParamTy));
-    bodyPattern->setType(swiftParamTy);
-    bodyPatternElts.push_back(TuplePatternElt(bodyPattern));
-    bodyPatternElts.back().setLabel(name, SourceLoc());
-
-    // Add the tuple elements for the function types.
-    swiftArgParams.push_back(TupleTypeElt(swiftParamTy, name));
-    swiftBodyParams.push_back(TupleTypeElt(swiftParamTy, bodyName));
+    parameters.push_back(bodyVar);
     ++index;
   }
 
   // Append an additional argument to represent varargs.
   if (isVariadic) {
-      auto paramTy =  BoundGenericType::get(SwiftContext.getArrayDecl(), Type(),
-        {SwiftContext.getAnyDecl()->getDeclaredType()});
-      auto name = SwiftContext.getIdentifier("varargs");
-      auto bodyVar = new (SwiftContext) ParamDecl(true, SourceLoc(), Identifier(),
-                                                  SourceLoc(), name, paramTy,
-                                                  ImportedHeaderUnit);
-      Pattern *bodyPattern = new (SwiftContext) NamedPattern(bodyVar);
-      bodyPattern->setType(paramTy);
-      bodyPattern = new (SwiftContext) TypedPattern(bodyPattern,
-                                                    TypeLoc::withoutLoc(paramTy));
-      bodyPattern->setType(paramTy);
-      bodyPatternElts.push_back(TuplePatternElt(Identifier(), SourceLoc(),
-                                                bodyPattern, true));
-      swiftArgParams.push_back(TupleTypeElt(paramTy, Identifier(),
-                                            DefaultArgumentKind::None, true));
-      swiftBodyParams.push_back(TupleTypeElt(paramTy, name,
-                                             DefaultArgumentKind::None, true));
+    auto paramTy =  BoundGenericType::get(SwiftContext.getArrayDecl(), Type(),
+      {SwiftContext.getAnyDecl()->getDeclaredType()});
+    auto name = SwiftContext.getIdentifier("varargs");
+    auto param = new (SwiftContext) ParamDecl(true, SourceLoc(), SourceLoc(),
+                                              Identifier(),
+                                              SourceLoc(), name, paramTy,
+                                              ImportedHeaderUnit);
+
+    param->setVariadic();
+    parameters.push_back(param);
   }
 
-  // Form the parameter tuples.
-  auto bodyParamsTy = TupleType::get(swiftBodyParams, SwiftContext);
-
-  // Form the body patterns.
-  bodyPatterns.push_back(TuplePattern::create(SwiftContext, SourceLoc(),
-                                              bodyPatternElts, SourceLoc()));
-  bodyPatterns.back()->setType(bodyParamsTy);  
+  // Form the parameter list.
+  parameterList = ParameterList::create(SwiftContext, parameters);
   
   FunctionType::ExtInfo extInfo;
   extInfo = extInfo.withIsNoReturn(isNoReturn);
   
   // Form the function type.
-  auto argTy = TupleType::get(swiftArgParams, SwiftContext);
+  auto argTy = parameterList->getType(SwiftContext);
   return FunctionType::get(argTy, swiftResultTy, extInfo);
 }
 
@@ -1510,43 +1472,9 @@ static bool isObjCMethodResultAudited(const clang::Decl *decl) {
           decl->hasAttr<clang::ObjCReturnsInnerPointerAttr>());
 }
 
-namespace {
-  struct ErrorImportInfo {
-    ForeignErrorConvention::Kind Kind;
-    ForeignErrorConvention::IsOwned_t IsOwned;
-    ForeignErrorConvention::IsReplaced_t ReplaceParamWithVoid;
-    unsigned ParamIndex;
-    CanType ParamType;
-    CanType OrigResultType;
-
-    ForeignErrorConvention asForeignErrorConvention() const {
-      assert(ParamType && "not fully initialized!");
-      using FEC = ForeignErrorConvention;
-      switch (Kind) {
-      case FEC::ZeroResult:
-        return FEC::getZeroResult(ParamIndex, IsOwned, ReplaceParamWithVoid,
-                                  ParamType, OrigResultType);
-      case FEC::NonZeroResult:
-        return FEC::getNonZeroResult(ParamIndex, IsOwned, ReplaceParamWithVoid,
-                                     ParamType, OrigResultType);
-      case FEC::ZeroPreservedResult:
-        return FEC::getZeroPreservedResult(ParamIndex, IsOwned,
-                                           ReplaceParamWithVoid, ParamType);
-      case FEC::NilResult:
-        return FEC::getNilResult(ParamIndex, IsOwned, ReplaceParamWithVoid,
-                                 ParamType);
-      case FEC::NonNilError:
-        return FEC::getNonNilError(ParamIndex, IsOwned, ReplaceParamWithVoid,
-                                   ParamType);
-      }
-      llvm_unreachable("bad error convention");
-    }
-  };
-}
-
-/// Determine whether this is the name of an Objective-C collection
-/// with a single element type.
-static bool isObjCCollectionName(StringRef typeName) {
+/// Determine whether this is the name of a collection with a single
+/// element type.
+static bool isCollectionName(StringRef typeName) {
   auto lastWord = camel_case::getLastWord(typeName);
   return lastWord == "Array" || lastWord == "Set";
 }
@@ -1603,10 +1531,29 @@ OmissionTypeName ClangImporter::Implementation::getClangTypeNameForOmission(
       if (name == "NSInteger" || name == "NSUInteger" || name == "CGFloat")
         return name;
 
+      // If it's a collection name and of pointer type, call it an
+      // array of the pointee type.
+      if (isCollectionName(name)) {
+        if (auto ptrType = type->getAs<clang::PointerType>()) {
+          return OmissionTypeName(
+                   name, None, 
+                 getClangTypeNameForOmission(ctx, ptrType->getPointeeType())
+                   .Name);
+        }
+      }
+
       // Otherwise, desugar one level...
       lastTypedefName = name;
       type = typedefType->getDecl()->getUnderlyingType();
       continue;
+    }
+
+    // For array types, convert the element type and treat this an as array.
+    if (auto arrayType = dyn_cast<clang::ArrayType>(typePtr)) {
+      return OmissionTypeName(
+               "Array", None, 
+               getClangTypeNameForOmission(ctx, arrayType->getElementType())
+                 .Name);
     }
 
     // Look through reference types.
@@ -1642,8 +1589,17 @@ OmissionTypeName ClangImporter::Implementation::getClangTypeNameForOmission(
     if (objcClass) {
       // If this isn't the name of an Objective-C collection, we're done.
       auto className = objcClass->getName();
-      if (!isObjCCollectionName(className))
+      if (!isCollectionName(className))
         return className;
+
+      // If we don't have type parameters, use the prefix of the type
+      // name as the collection element type.
+      if (objcClass && !objcClass->getTypeParamList()) {
+        unsigned lastWordSize = camel_case::getLastWord(className).size();
+        StringRef elementName =
+          className.substr(0, className.size() - lastWordSize);
+        return OmissionTypeName(className, None, elementName);
+      }
 
       // If we don't have type arguments, the collection element type
       // is "Object".
@@ -1789,11 +1745,11 @@ OmissionTypeName ClangImporter::Implementation::getClangTypeNameForOmission(
 
   // Block pointers.
   if (type->getAs<clang::BlockPointerType>())
-    return "Block";
+    return OmissionTypeName("Block", OmissionTypeFlags::Function);
 
   // Function pointers.
   if (type->isFunctionType())
-    return "Function";
+    return OmissionTypeName("Function", OmissionTypeFlags::Function);
 
   return StringRef();
 }
@@ -1807,7 +1763,6 @@ bool ClangImporter::Implementation::omitNeedlessWordsInFunctionName(
        clang::QualType resultType,
        const clang::DeclContext *dc,
        const llvm::SmallBitVector &nonNullArgs,
-       const Optional<api_notes::ObjCMethodInfo> &knownMethod,
        Optional<unsigned> errorParamIndex,
        bool returnsSelf,
        bool isInstanceMethod,
@@ -1835,20 +1790,20 @@ bool ClangImporter::Implementation::omitNeedlessWordsInFunctionName(
 
     // Figure out whether there will be a default argument for this
     // parameter.
+    StringRef argumentName;
+    if (i < argumentNames.size())
+      argumentName = argumentNames[i];
     bool hasDefaultArg
-      = canInferDefaultArgument(
+      = inferDefaultArgument(
           clangSema.PP,
           param->getType(),
           getParamOptionality(param,
-                              !nonNullArgs.empty() && nonNullArgs[i],
-                              knownMethod && knownMethod->NullabilityAudited
-                                ? Optional<clang::NullabilityKind>(
-                                    knownMethod->getParamTypeInfo(i))
-                                : None),
+                              !nonNullArgs.empty() && nonNullArgs[i]),
           SwiftContext.getIdentifier(baseName), numParams,
-          isLastParameter);
+          argumentName, isLastParameter) != DefaultArgumentKind::None;
 
-    paramTypes.push_back(getClangTypeNameForOmission(clangCtx, param->getType())
+    paramTypes.push_back(getClangTypeNameForOmission(clangCtx,
+                                                     param->getOriginalType())
                             .withDefaultArgument(hasDefaultArg));
   }
 
@@ -1873,7 +1828,7 @@ bool ClangImporter::Implementation::omitNeedlessWordsInFunctionName(
 /// Retrieve the instance type of the given Clang declaration context.
 clang::QualType ClangImporter::Implementation::getClangDeclContextType(
                   const clang::DeclContext *dc) {
-  auto &ctx = getClangASTContext();
+  auto &ctx = dc->getParentASTContext();
   if (auto objcClass = dyn_cast<clang::ObjCInterfaceDecl>(dc))
     return ctx.getObjCObjectPointerType(ctx.getObjCInterfaceType(objcClass));
 
@@ -1883,6 +1838,13 @@ clang::QualType ClangImporter::Implementation::getClangDeclContextType(
                objcCategory->getClassInterface()));
   }
 
+  if (auto constProto = dyn_cast<clang::ObjCProtocolDecl>(dc)) {
+    auto proto = const_cast<clang::ObjCProtocolDecl *>(constProto);
+    auto type = ctx.getObjCObjectType(ctx.ObjCBuiltinIdTy, { }, { proto },
+                                      false);
+    return ctx.getObjCObjectPointerType(type);
+  }
+
   if (auto tag = dyn_cast<clang::TagDecl>(dc)) {
     return ctx.getTagDeclType(tag);
   }
@@ -1890,21 +1852,22 @@ clang::QualType ClangImporter::Implementation::getClangDeclContextType(
   return clang::QualType();
 }
 
-bool ClangImporter::Implementation::canInferDefaultArgument(
-       clang::Preprocessor &pp, clang::QualType type,
-       OptionalTypeKind clangOptionality, Identifier baseName,
-       unsigned numParams, bool isLastParameter) {
+DefaultArgumentKind ClangImporter::Implementation::inferDefaultArgument(
+                      clang::Preprocessor &pp, clang::QualType type,
+                      OptionalTypeKind clangOptionality, Identifier baseName,
+                      unsigned numParams, StringRef argumentLabel,
+                      bool isLastParameter) {
   // Don't introduce a default argument for setters with only a single
   // parameter.
   if (numParams == 1 && camel_case::getFirstWord(baseName.str()) == "set")
-    return false;
+    return DefaultArgumentKind::None;
 
   // Some nullable parameters default to 'nil'.
   if (clangOptionality == OTK_Optional) {
     // Nullable trailing closure parameters default to 'nil'.
     if (isLastParameter &&
         (type->isFunctionPointerType() || type->isBlockPointerType()))
-    return true;
+      return DefaultArgumentKind::Nil;
 
     // NSZone parameters default to 'nil'.
     if (auto ptrType = type->getAs<clang::PointerType>()) {
@@ -1912,22 +1875,57 @@ bool ClangImporter::Implementation::canInferDefaultArgument(
             = ptrType->getPointeeType()->getAs<clang::RecordType>()) {
         if (recType->isStructureOrClassType() &&
             recType->getDecl()->getName() == "_NSZone")
-          return true;
+          return DefaultArgumentKind::Nil;
       }
     }
   }
 
   // Option sets default to "[]" if they have "Options" in their name.
   if (const clang::EnumType *enumTy = type->getAs<clang::EnumType>())
-    if (classifyEnum(pp, enumTy->getDecl()) == EnumKind::Options) {
+    if (getEnumKind(enumTy->getDecl(), &pp) == EnumKind::Options) {
       auto enumName = enumTy->getDecl()->getName();
       for (auto word : reversed(camel_case::getWords(enumName))) {
         if (camel_case::sameWordIgnoreFirstCase(word, "options"))
-          return true;
+          return DefaultArgumentKind::EmptyArray;
       }
     }
 
-  return false;
+  // NSDictionary arguments default to [:] if "options", "attributes",
+  // or "userInfo" occur in the argument label or (if there is no
+  // argument label) at the end of the base name.
+  if (auto objcPtrTy = type->getAs<clang::ObjCObjectPointerType>()) {
+    if (auto objcClass = objcPtrTy->getInterfaceDecl()) {
+      if (objcClass->getName() == "NSDictionary") {
+        StringRef searchStr = argumentLabel;
+        if (searchStr.empty() && !baseName.empty())
+          searchStr = baseName.str();
+
+        bool sawInfo = false;
+        for (auto word : reversed(camel_case::getWords(searchStr))) {
+          if (camel_case::sameWordIgnoreFirstCase(word, "options"))
+            return DefaultArgumentKind::EmptyDictionary;
+
+          if (camel_case::sameWordIgnoreFirstCase(word, "attributes"))
+            return DefaultArgumentKind::EmptyDictionary;
+
+          if (camel_case::sameWordIgnoreFirstCase(word, "info")) {
+            sawInfo = true;
+            continue;
+          }
+
+          if (sawInfo && camel_case::sameWordIgnoreFirstCase(word, "user"))
+            return DefaultArgumentKind::EmptyDictionary;
+
+          if (argumentLabel.empty())
+            break;
+
+          sawInfo = false;
+        }
+      }
+    }
+  }
+
+  return DefaultArgumentKind::None;
 }
 
 /// Adjust the result type of a throwing function based on the
@@ -1990,7 +1988,7 @@ Type ClangImporter::Implementation::importMethodType(
        ArrayRef<const clang::ParmVarDecl *> params,
        bool isVariadic, bool isNoReturn,
        bool isFromSystemModule,
-       SmallVectorImpl<Pattern*> &bodyPatterns,
+       ParameterList **bodyParams,
        ImportedName importedName,
        DeclName &methodName,
        Optional<ForeignErrorConvention> &foreignErrorInfo,
@@ -2015,13 +2013,6 @@ Type ClangImporter::Implementation::importMethodType(
     resultKind = ImportTypeKind::AuditedResult;
   else
     resultKind = ImportTypeKind::Result;
-
-  // Check if we know more about the type from our whitelists.
-  Optional<api_notes::ObjCMethodInfo> knownMethod;
-  if (auto knownMethodTmp = getKnownObjCMethod(clangDecl)) {
-    if (knownMethodTmp->NullabilityAudited)
-      knownMethod = knownMethodTmp;
-  }
 
   // Determine if the method is a property getter/setter.
   const clang::ObjCPropertyDecl *property = nullptr;
@@ -2048,9 +2039,6 @@ Type ClangImporter::Implementation::importMethodType(
     OptionalTypeKind OptionalityOfReturn;
     if (clangDecl->hasAttr<clang::ReturnsNonNullAttr>()) {
       OptionalityOfReturn = OTK_None;
-    } else if (knownMethod) {
-      OptionalityOfReturn = translateNullability(
-                              knownMethod->getReturnTypeInfo());
     } else {
       OptionalityOfReturn = OTK_ImplicitlyUnwrappedOptional;
     }
@@ -2098,28 +2086,17 @@ Type ClangImporter::Implementation::importMethodType(
   llvm::SmallBitVector nonNullArgs = getNonNullArgs(clangDecl, params);
 
   // Import the parameters.
-  SmallVector<TupleTypeElt, 4> swiftArgParams;
-  SmallVector<TupleTypeElt, 4> swiftBodyParams;
-  SmallVector<TuplePatternElt, 4> bodyPatternElts;
+  SmallVector<ParamDecl*, 4> swiftParams;
 
   auto addEmptyTupleParameter = [&](Identifier argName) {
     // It doesn't actually matter which DeclContext we use, so just
     // use the imported header unit.
     auto type = TupleType::getEmpty(SwiftContext);
-    auto var = new (SwiftContext) ParamDecl(/*IsLet*/ true,
+    auto var = new (SwiftContext) ParamDecl(/*IsLet*/ true, SourceLoc(),
                                             SourceLoc(), argName,
                                             SourceLoc(), argName, type,
                                             ImportedHeaderUnit);
-    Pattern *pattern = new (SwiftContext) NamedPattern(var);
-    pattern->setType(type);
-    pattern = new (SwiftContext) TypedPattern(pattern,
-                                              TypeLoc::withoutLoc(type));
-    pattern->setType(type);
-
-    bodyPatternElts.push_back(TuplePatternElt(pattern));
-    bodyPatternElts.back().setLabel(argName, SourceLoc());
-    swiftArgParams.push_back(TupleTypeElt(type, argName));
-    swiftBodyParams.push_back(TupleTypeElt(type, argName));
+    swiftParams.push_back(var);
   };
 
   // Determine the number of parameters.
@@ -2145,11 +2122,7 @@ Type ClangImporter::Implementation::importMethodType(
     // Check nullability of the parameter.
     OptionalTypeKind optionalityOfParam
       = getParamOptionality(param,
-                            !nonNullArgs.empty() && nonNullArgs[paramIndex],
-                            knownMethod
-                              ? Optional<clang::NullabilityKind>(
-                                  knownMethod->getParamTypeInfo(paramIndex))
-                              : None);
+                            !nonNullArgs.empty() && nonNullArgs[paramIndex]);
 
     bool allowNSUIntegerAsIntInParam = isFromSystemModule;
     if (allowNSUIntegerAsIntInParam) {
@@ -2224,30 +2197,11 @@ Type ClangImporter::Implementation::importMethodType(
     }
     ++nameIndex;
 
-    // Determine whether we have a default argument.
-    DefaultArgumentKind defaultArg = DefaultArgumentKind::None;
-    bool isLastParameter
-      = (paramIndex == params.size() - 1) ||
-        (paramIndex == params.size() - 2 &&
-         errorInfo && errorInfo->ParamIndex == params.size() - 1);
-
-    if (InferDefaultArguments &&
-        (kind == SpecialMethodKind::Regular ||
-         kind == SpecialMethodKind::Constructor) &&
-        canInferDefaultArgument(getClangPreprocessor(),
-                                param->getType(), optionalityOfParam,
-                                methodName.getBaseName(), numEffectiveParams,
-                                isLastParameter)) {
-      defaultArg = DefaultArgumentKind::Normal;
-    }
-
-    // Compute the pattern to put into the body.
-    Pattern *bodyPattern;
     // It doesn't actually matter which DeclContext we use, so just use the
     // imported header unit.
     auto bodyVar
-      = createDeclWithClangNode<ParamDecl>(param,
-                                     /*IsLet*/ true, SourceLoc(), name,
+      = createDeclWithClangNode<ParamDecl>(param, /*IsLet*/ true,
+                                     SourceLoc(), SourceLoc(), name,
                                      importSourceLoc(param->getLocation()),
                                      bodyName, swiftParamTy, 
                                      ImportedHeaderUnit);
@@ -2257,21 +2211,29 @@ Type ClangImporter::Implementation::importMethodType(
         new (SwiftContext) NoEscapeAttr(/*IsImplicit=*/false));
     }
 
-    // Set up the body pattern.
-    bodyPattern = new (SwiftContext) NamedPattern(bodyVar);
-    bodyPattern->setType(swiftParamTy);
-    bodyPattern
-      = new (SwiftContext) TypedPattern(bodyPattern,
-                                        TypeLoc::withoutLoc(swiftParamTy));
-    bodyPattern->setType(swiftParamTy);
-    TuplePatternElt patternElt(bodyPattern);
-    patternElt.setDefaultArgKind(defaultArg);
-    patternElt.setLabel(name, SourceLoc());
-    bodyPatternElts.push_back(patternElt);
-
-    // Add the tuple elements for the function types.
-    swiftArgParams.push_back(TupleTypeElt(swiftParamTy, name, defaultArg));
-    swiftBodyParams.push_back(TupleTypeElt(swiftParamTy, bodyName, defaultArg));
+    // Set up the parameter info.
+    auto paramInfo = bodyVar;
+    
+    // Determine whether we have a default argument.
+    if (InferDefaultArguments &&
+        (kind == SpecialMethodKind::Regular ||
+         kind == SpecialMethodKind::Constructor)) {
+      bool isLastParameter = (paramIndex == params.size() - 1) ||
+        (paramIndex == params.size() - 2 &&
+         errorInfo && errorInfo->ParamIndex == params.size() - 1);
+      
+      auto defaultArg = inferDefaultArgument(getClangPreprocessor(),
+                                             param->getType(),
+                                             optionalityOfParam,
+                                             methodName.getBaseName(),
+                                             numEffectiveParams,
+                                             name.empty() ? StringRef()
+                                                          : name.str(),
+                                             isLastParameter);
+      if (defaultArg != DefaultArgumentKind::None)
+        paramInfo->setDefaultArgumentKind(defaultArg);
+    }
+    swiftParams.push_back(paramInfo);
   }
 
   // If we have a constructor with no parameters and a name with an
@@ -2281,7 +2243,7 @@ Type ClangImporter::Implementation::importMethodType(
     addEmptyTupleParameter(argNames[0]);
   }
 
-  if (importedName.HasCustomName && argNames.size() != swiftBodyParams.size()) {
+  if (importedName.HasCustomName && argNames.size() != swiftParams.size()) {
     // Note carefully: we're emitting a warning in the /Clang/ buffer.
     auto &srcMgr = getClangASTContext().getSourceManager();
     auto &rawDiagClient = Instance->getDiagnosticClient();
@@ -2290,19 +2252,15 @@ Type ClangImporter::Implementation::importMethodType(
         diagClient.resolveSourceLocation(srcMgr, clangDecl->getLocation());
     if (methodLoc.isValid()) {
       SwiftContext.Diags.diagnose(methodLoc, diag::invalid_swift_name_method,
-                                  swiftBodyParams.size() < argNames.size(),
-                                  swiftBodyParams.size(), argNames.size());
+                                  swiftParams.size() < argNames.size(),
+                                  swiftParams.size(), argNames.size());
     }
     return Type();
   }
 
-  // Form the parameter tuple.
-  auto bodyParamsTy = TupleType::get(swiftBodyParams, SwiftContext);
   
-  // Form the body patterns.
-  bodyPatterns.push_back(TuplePattern::create(SwiftContext, SourceLoc(),
-                                              bodyPatternElts, SourceLoc()));
-  bodyPatterns.back()->setType(bodyParamsTy);
+  // Form the parameter list.
+  *bodyParams = ParameterList::create(SwiftContext, swiftParams);
   
   FunctionType::ExtInfo extInfo;
   extInfo = extInfo.withIsNoReturn(isNoReturn);
@@ -2316,8 +2274,8 @@ Type ClangImporter::Implementation::importMethodType(
   }
   
   // Form the function type.
-  auto argTy = TupleType::get(swiftArgParams, SwiftContext);
-  return FunctionType::get(argTy, swiftResultTy, extInfo);
+  return FunctionType::get((*bodyParams)->getType(SwiftContext),
+                           swiftResultTy, extInfo);
 }
 
 Module *ClangImporter::Implementation::getStdlibModule() {

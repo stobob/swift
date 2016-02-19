@@ -2,7 +2,7 @@
 //
 // This source file is part of the Swift.org open source project
 //
-// Copyright (c) 2014 - 2015 Apple Inc. and the Swift project authors
+// Copyright (c) 2014 - 2016 Apple Inc. and the Swift project authors
 // Licensed under Apache License v2.0 with Runtime Library Exception
 //
 // See http://swift.org/LICENSE.txt for license information
@@ -26,16 +26,25 @@
 
 using namespace swift;
 
-static void mangleConstant(NormalProtocolConformance *C,
-                           llvm::raw_ostream &buffer) {
+static std::string mangleConstant(NormalProtocolConformance *C) {
   using namespace Mangle;
-  Mangler mangler(buffer);
+  Mangler mangler;
 
   //   mangled-name ::= '_T' global
   //   global ::= 'WP' protocol-conformance
-  mangler.manglePrefix("_TWP");
+  mangler.append("_TWP");
   mangler.mangleProtocolConformance(C);
-  buffer.flush();
+  return mangler.finalize();
+
+}
+
+void SILWitnessTable::addWitnessTable() {
+  // Make sure we have not seen this witness table yet.
+  assert(Mod.WitnessTableMap.find(Conformance) ==
+         Mod.WitnessTableMap.end() && "Attempting to create duplicate "
+         "witness table.");
+  Mod.WitnessTableMap[Conformance] = this;
+  Mod.witnessTables.push_back(this);
 }
 
 SILWitnessTable *
@@ -46,22 +55,14 @@ SILWitnessTable::create(SILModule &M, SILLinkage Linkage, bool IsFragile,
          "conformance.");
 
   // Create the mangled name of our witness table...
-  llvm::SmallString<32> buffer;
-  llvm::raw_svector_ostream stream(buffer);
-  mangleConstant(Conformance, stream);
-  Identifier Name = M.getASTContext().getIdentifier(buffer);
+  Identifier Name = M.getASTContext().getIdentifier(mangleConstant(Conformance));
 
   // Allocate the witness table and initialize it.
   void *buf = M.allocate(sizeof(SILWitnessTable), alignof(SILWitnessTable));
   SILWitnessTable *wt = ::new (buf) SILWitnessTable(M, Linkage, IsFragile,
                                            Name.str(), Conformance, entries);
 
-  // Make sure we have not seen this witness table yet.
-  assert(M.WitnessTableLookupCache.find(Conformance) ==
-         M.WitnessTableLookupCache.end() && "Attempting to create duplicate "
-         "witness table.");
-  M.WitnessTableLookupCache[Conformance] = wt;
-  M.witnessTables.push_back(wt);
+  wt->addWitnessTable();
 
   // Return the resulting witness table.
   return wt;
@@ -74,22 +75,15 @@ SILWitnessTable::create(SILModule &M, SILLinkage Linkage,
          "conformance.");
 
   // Create the mangled name of our witness table...
-  llvm::SmallString<32> buffer;
-  llvm::raw_svector_ostream stream(buffer);
-  mangleConstant(Conformance, stream);
-  Identifier Name = M.getASTContext().getIdentifier(buffer);
+  Identifier Name = M.getASTContext().getIdentifier(mangleConstant(Conformance));
+
 
   // Allocate the witness table and initialize it.
   void *buf = M.allocate(sizeof(SILWitnessTable), alignof(SILWitnessTable));
   SILWitnessTable *wt = ::new (buf) SILWitnessTable(M, Linkage, Name.str(),
                                                     Conformance);
 
-  // Update the SILModule state in light of wT.
-  assert(M.WitnessTableLookupCache.find(Conformance) ==
-         M.WitnessTableLookupCache.end() && "Attempting to create duplicate "
-         "witness table.");
-  M.WitnessTableLookupCache[Conformance] = wt;
-  M.witnessTables.push_back(wt);
+  wt->addWitnessTable();
 
   // Return the resulting witness table.
   return wt;

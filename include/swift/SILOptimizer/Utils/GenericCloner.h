@@ -1,8 +1,8 @@
-//===-- GenericCloner.h - Specializes generic functions  --------*- C++ -*-===//
+//===--- GenericCloner.h - Specializes generic functions  -------*- C++ -*-===//
 //
 // This source file is part of the Swift.org open source project
 //
-// Copyright (c) 2014 - 2015 Apple Inc. and the Swift project authors
+// Copyright (c) 2014 - 2016 Apple Inc. and the Swift project authors
 // Licensed under Apache License v2.0 with Runtime Library Exception
 //
 // See http://swift.org/LICENSE.txt for license information
@@ -43,7 +43,7 @@ public:
                 CloneCollector::CallbackType Callback)
   : TypeSubstCloner(*initCloned(F, InterfaceSubs, NewName), *F, ContextSubs,
                     ApplySubs), Callback(Callback) {
-    assert(F->getDebugScope()->SILFn != getCloned()->getDebugScope()->SILFn);
+    assert(F->getDebugScope()->Parent != getCloned()->getDebugScope()->Parent);
   }
   /// Clone and remap the types in \p F according to the substitution
   /// list in \p Subs.

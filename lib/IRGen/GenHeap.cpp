@@ -2,7 +2,7 @@
 //
 // This source file is part of the Swift.org open source project
 //
-// Copyright (c) 2014 - 2015 Apple Inc. and the Swift project authors
+// Copyright (c) 2014 - 2016 Apple Inc. and the Swift project authors
 // Licensed under Apache License v2.0 with Runtime Library Exception
 //
 // See http://swift.org/LICENSE.txt for license information
@@ -1482,14 +1482,14 @@ const TypeInfo *TypeConverter::convertBoxType(SILBoxType *T) {
   auto &fixedTI = cast<FixedTypeInfo>(eltTI);
 
   // For empty types, we don't really need to allocate anything.
-  if (fixedTI.isKnownEmpty()) {
+  if (fixedTI.isKnownEmpty(ResilienceExpansion::Maximal)) {
     if (!EmptyBoxTI)
       EmptyBoxTI = new EmptyBoxTypeInfo(IGM);
     return EmptyBoxTI;
   }
 
   // We can share box info for all similarly-shaped POD types.
-  if (fixedTI.isPOD(ResilienceScope::Component)) {
+  if (fixedTI.isPOD(ResilienceExpansion::Maximal)) {
     auto stride = fixedTI.getFixedStride();
     auto align = fixedTI.getFixedAlignment();
     auto foundPOD = PODBoxTI.find({stride.getValue(),align.getValue()});
@@ -1503,7 +1503,7 @@ const TypeInfo *TypeConverter::convertBoxType(SILBoxType *T) {
   }
 
   // We can share box info for all single-refcounted types.
-  if (fixedTI.isSingleSwiftRetainablePointer(ResilienceScope::Component)) {
+  if (fixedTI.isSingleSwiftRetainablePointer(ResilienceExpansion::Maximal)) {
     if (!SwiftRetainablePointerBoxTI)
       SwiftRetainablePointerBoxTI
         = new SingleRefcountedBoxTypeInfo(IGM, ReferenceCounting::Native);

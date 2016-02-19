@@ -1,8 +1,8 @@
-//===--- ConformanceLookupTable - Conformance Lookup Table ------*- C++ -*-===//
+//===--- ConformanceLookupTable - Conformance Lookup Table ----------------===//
 //
 // This source file is part of the Swift.org open source project
 //
-// Copyright (c) 2014 - 2015 Apple Inc. and the Swift project authors
+// Copyright (c) 2014 - 2016 Apple Inc. and the Swift project authors
 // Licensed under Apache License v2.0 with Runtime Library Exception
 //
 // See http://swift.org/LICENSE.txt for license information
@@ -491,6 +491,10 @@ void ConformanceLookupTable::expandImpliedConformances(NominalTypeDecl *nominal,
   // may be reallocated during this traversal, so pay the lookup cost
   // during each iteration.
   for (unsigned i = 0; i != AllConformances[dc].size(); ++i) {
+    /// FIXME: Avoid the possibility of an infinite loop by fixing the root
+    ///        cause instead (incomplete circularity detection).
+    assert(i <= 16384 &&
+           "Infinite loop due to circular protocol inheritance?");
     ConformanceEntry *conformanceEntry = AllConformances[dc][i];
     ProtocolDecl *conformingProtocol = conformanceEntry->getProtocol();
 
@@ -785,7 +789,7 @@ ProtocolConformance *ConformanceLookupTable::getConformance(
     return nullptr;
 
   NominalTypeDecl *conformingNominal
-    = conformingDC->isNominalTypeOrNominalTypeExtensionContext();
+    = conformingDC->getAsNominalTypeOrNominalTypeExtensionContext();
 
   // Form the conformance.
   Type type = entry->getDeclContext()->getDeclaredTypeInContext();
@@ -839,7 +843,7 @@ void ConformanceLookupTable::registerProtocolConformance(
        ProtocolConformance *conformance) {
   auto protocol = conformance->getProtocol();
   auto dc = conformance->getDeclContext();
-  auto nominal = dc->isNominalTypeOrNominalTypeExtensionContext();
+  auto nominal = dc->getAsNominalTypeOrNominalTypeExtensionContext();
 
   // If there is an entry to update, do so.
   auto &dcConformances = AllConformances[dc];

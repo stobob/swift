@@ -4,6 +4,7 @@ add_swift_library(swiftAST
   ASTDumper.cpp
   ASTNode.cpp
   ASTPrinter.cpp
+  ASTVerifier.cpp
   ASTWalker.cpp
   Attr.cpp
   Availability.cpp
@@ -14,6 +15,8 @@ add_swift_library(swiftAST
   ConformanceLookupTable.cpp
   Decl.cpp
   DeclContext.cpp
+  DeclNameLoc.cpp
+  DefaultArgumentKind.cpp
   DiagnosticList.cpp
   DiagnosticEngine.cpp
   DocComment.cpp
@@ -25,6 +28,7 @@ add_swift_library(swiftAST
   Module.cpp
   ModuleNameLookup.cpp
   NameLookup.cpp
+  Parameter.cpp
   Pattern.cpp
   PlatformKind.cpp
   PrettyStackTrace.cpp
@@ -37,7 +41,6 @@ add_swift_library(swiftAST
   TypeRepr.cpp
   TypeWalker.cpp
   USRGeneration.cpp
-  Verifier.cpp
   LINK_LIBRARIES
     swiftMarkup
     swiftBasic
@@ -70,7 +73,8 @@ add_swift_library(swiftAST
   )
 
 if(NOT SWIFT_BUILT_STANDALONE)
-  add_dependencies(swiftAST intrinsics_gen)
+  get_property(CLANG_TABLEGEN_TARGETS GLOBAL PROPERTY CLANG_TABLEGEN_TARGETS)
+  add_dependencies(swiftAST intrinsics_gen ${CLANG_TABLEGEN_TARGETS})
 endif()
 
 set(swift_ast_verifier_flag)

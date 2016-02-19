@@ -2,7 +2,7 @@
 //
 // This source file is part of the Swift.org open source project
 //
-// Copyright (c) 2014 - 2015 Apple Inc. and the Swift project authors
+// Copyright (c) 2014 - 2016 Apple Inc. and the Swift project authors
 // Licensed under Apache License v2.0 with Runtime Library Exception
 //
 // See http://swift.org/LICENSE.txt for license information
@@ -22,11 +22,12 @@
 #include "swift/AST/Decl.h"
 #include "llvm/Bitcode/RecordLayout.h"
 #include "llvm/Bitcode/BitCodes.h"
+#include "llvm/ADT/PointerEmbeddedInt.h"
 
 namespace swift {
 namespace serialization {
 
-using llvm::Fixnum;
+using llvm::PointerEmbeddedInt;
 using llvm::BCArray;
 using llvm::BCBlob;
 using llvm::BCFixed;
@@ -50,10 +51,11 @@ const uint16_t VERSION_MAJOR = 0;
 /// When the format changes IN ANY WAY, this number should be incremented.
 /// To ensure that two separate changes don't silently get merged into one
 /// in source control, you should also update the comment to briefly
-/// describe what change you made.
-const uint16_t VERSION_MINOR = 223; // Last change: SIL @inout_aliasable
+/// describe what change you made. The content of this comment isn't important;
+/// it just ensures a conflict if two people change the module format.
+const uint16_t VERSION_MINOR = 239; // multiple results for SILFunctionType
 
-using DeclID = Fixnum<31>;
+using DeclID = PointerEmbeddedInt<unsigned, 31>;
 using DeclIDField = BCFixed<31>;
 
 // TypeID must be the same as DeclID because it is stored in the same way.
@@ -77,7 +79,7 @@ using NormalConformanceIDField = DeclIDField;
 using ModuleID = IdentifierID;
 using ModuleIDField = IdentifierIDField;
 
-using BitOffset = Fixnum<31>;
+using BitOffset = PointerEmbeddedInt<unsigned, 31>;
 using BitOffsetField = BCFixed<31>;
 
 // CharOffset must be the same as BitOffset because it is stored in the
@@ -177,7 +179,6 @@ using CtorInitializerKindField = BCFixed<2>;
 // VERSION_MAJOR.
 enum class ParameterConvention : uint8_t {
   Indirect_In,
-  Indirect_Out,
   Indirect_Inout,
   Indirect_InoutAliasable,
   Direct_Owned,
@@ -191,12 +192,13 @@ using ParameterConventionField = BCFixed<4>;
 // These IDs must \em not be renumbered or reordered without incrementing
 // VERSION_MAJOR.
 enum class ResultConvention : uint8_t {
+  Indirect,
   Owned,
   Unowned,
   UnownedInnerPointer,
   Autoreleased,
 };
-using ResultConventionField = BCFixed<2>;
+using ResultConventionField = BCFixed<3>;
 
 // These IDs must \em not be renumbered or reordered without incrementing
 // VERSION_MAJOR.
@@ -232,7 +234,8 @@ static inline OperatorKind getStableFixity(DeclKind kind) {
 enum GenericRequirementKind : uint8_t {
   Conformance = 0,
   SameType,
-  WitnessMarker
+  WitnessMarker,
+  Superclass
 };
 using GenericRequirementKindField = BCFixed<2>;
 
@@ -266,8 +269,11 @@ enum class DefaultArgumentKind : uint8_t {
   Function,
   Inherited,
   DSOHandle,
+  Nil,
+  EmptyArray,
+  EmptyDictionary,
 };
-using DefaultArgumentField = BCFixed<3>;
+using DefaultArgumentField = BCFixed<4>;
 
 // These IDs must \em not be renumbered or reordered without incrementing
 // VERSION_MAJOR.
@@ -434,7 +440,8 @@ namespace options_block {
     SDK_PATH = 1,
     XCC,
     IS_SIB,
-    IS_TESTABLE
+    IS_TESTABLE,
+    IS_RESILIENT
   };
 
   using SDKPathLayout = BCRecordLayout<
@@ -454,6 +461,10 @@ namespace options_block {
 
   using IsTestableLayout = BCRecordLayout<
     IS_TESTABLE
+  >;
+
+  using IsResilientLayout = BCRecordLayout<
+    IS_RESILIENT
   >;
 }
 
@@ -657,7 +668,6 @@ namespace decls_block {
 
   using BoundGenericSubstitutionLayout = BCRecordLayout<
     BOUND_GENERIC_SUBSTITUTION,
-    TypeIDField, // archetype
     TypeIDField,  // replacement
     BCVBR<5>
     // Trailed by protocol conformance info (if any)
@@ -687,15 +697,15 @@ namespace decls_block {
 
   using SILFunctionTypeLayout = BCRecordLayout<
     SIL_FUNCTION_TYPE,
-    TypeIDField,           // interface result type
-    ResultConventionField, // interface result convention
-    TypeIDField,           // interface error result type
-    ResultConventionField, // interface error result convention
     ParameterConventionField, // callee convention
     SILFunctionTypeRepresentationField, // representation
     BCFixed<1>,            // noreturn?
-    BCFixed<30>,           // number of generic parameters
-    BCArray<TypeIDField>   // parameter types and conventions, alternating
+    BCFixed<1>,            // error result?
+    BCFixed<30>,           // number of parameters
+    BCFixed<30>,           // number of results
+    BCArray<TypeIDField>   // parameter types/conventions, alternating
+                           // followed by result types/conventions, alternating
+                           // followed by error result type/convention
                            // followed by generic parameter types
     // Trailed by its generic requirements, if any.
   >;
@@ -990,6 +1000,17 @@ namespace decls_block {
     // Trailed by a pattern for self.
   >;
 
+  using ParameterListLayout = BCRecordLayout<
+    PARAMETERLIST,
+    BCVBR<5>    // numparams
+  >;
+  
+  using ParameterListEltLayout = BCRecordLayout<
+    PARAMETERLIST_ELT,
+    DeclIDField,           // ParamDecl
+    BCFixed<1>,            // isVariadic?
+    DefaultArgumentField   // default argument
+    >;
 
   using ParenPatternLayout = BCRecordLayout<
     PAREN_PATTERN,
@@ -1007,9 +1028,7 @@ namespace decls_block {
 
   using TuplePatternEltLayout = BCRecordLayout<
     TUPLE_PATTERN_ELT,
-    IdentifierIDField,     // label
-    BCFixed<1>,            // has ellipsis?
-    DefaultArgumentField   // default argument
+    IdentifierIDField     // label
     // The element pattern trails the record.
   >;
 
@@ -1102,10 +1121,10 @@ namespace decls_block {
     BCVBR<2> // context-scoped discriminator counter
   >;
 
-  /// A placeholder for lack of conformance information. Conformances are
-  /// indexed, so simply omitting one would be incorrect.
-  using NoConformanceLayout = BCRecordLayout<
-    NO_CONFORMANCE
+  /// A placeholder for lack of concrete conformance information.
+  using AbstractProtocolConformanceLayout = BCRecordLayout<
+    ABSTRACT_PROTOCOL_CONFORMANCE,
+    DeclIDField // the protocol
   >;
 
   using NormalProtocolConformanceLayout = BCRecordLayout<
@@ -1117,15 +1136,15 @@ namespace decls_block {
     BCVBR<5>, // inherited conformances count
     BCVBR<5>, // defaulted definitions count
     BCArray<DeclIDField>
-    // The array contains value-value-substitutionCount triplets,
+    // The array contains archetype-value pairs,
     // then type declarations, then defaulted definitions.
     // Inherited conformances follow, then the substitution records for the
-    // values and then types.
+    // associated types.
   >;
 
   using SpecializedProtocolConformanceLayout = BCRecordLayout<
     SPECIALIZED_PROTOCOL_CONFORMANCE,
-  TypeIDField,         // conforming type
+    TypeIDField,         // conforming type
     BCVBR<5>             // # of substitutions for the conformance
     // followed by substitution records for the conformance
   >;
@@ -1331,18 +1350,19 @@ namespace decls_block {
     BCArray<IdentifierIDField>
   >;
 
+  using Swift3MigrationDeclAttrLayout = BCRecordLayout<
+    Swift3Migration_DECL_ATTR,
+    BCFixed<1>, // implicit flag
+    BCVBR<5>,   // number of bytes in rename string
+    BCVBR<5>,   // number of bytes in message string
+    BCBlob      // rename, followed by message
+  >;
+
   using WarnUnusedResultDeclAttrLayout = BCRecordLayout<
     WarnUnusedResult_DECL_ATTR,
     BCFixed<1>, // implicit flag
     BCVBR<6>,  // index at the end of the message,
     BCBlob     // blob contains the message and mutating-version
-               // strings, separated by the prior index
-  >;
-
-  using MigrationIdDeclAttrLayout = BCRecordLayout<
-    MigrationId_DECL_ATTR,
-    BCVBR<6>,  // index at the end of the ident,
-    BCBlob     // blob contains the ident and pattern
                // strings, separated by the prior index
   >;
 
@@ -1443,6 +1463,11 @@ namespace index_block {
     BCBlob  // map from identifier strings to decl kinds / decl IDs
   >;
 
+  using GroupNamesLayout = BCGenericRecordLayout<
+    BCFixed<4>,  // record ID
+    BCBlob       // actual names
+  >;
+
   using ObjCMethodTableLayout = BCRecordLayout<
     OBJC_METHODS,  // record ID
     BCVBR<16>,     // table offset within the blob (see below)
@@ -1459,6 +1484,7 @@ namespace index_block {
 namespace comment_block {
   enum RecordKind {
     DECL_COMMENTS = 1,
+    GROUP_NAMES = 2,
   };
 
   using DeclCommentListLayout = BCRecordLayout<
@@ -1466,6 +1492,12 @@ namespace comment_block {
     BCVBR<16>,     // table offset within the blob (see below)
     BCBlob         // map from Decl IDs to comments
   >;
+
+  using GroupNamesLayout = BCRecordLayout<
+    GROUP_NAMES,    // record ID
+    BCBlob          // actual names
+  >;
+
 } // namespace comment_block
 
 } // end namespace serialization

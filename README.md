@@ -1,6 +1,12 @@
 <img src="https://swift.org/assets/images/swift.svg" alt="Swift logo" height="70" >
 # Swift Programming Language
 
+|| **Status** |
+|---|---|
+|**OS X**         |[![Build Status](https://ci.swift.org/job/oss-swift-incremental-RA-osx/badge/icon)](https://ci.swift.org/job/oss-swift-incremental-RA-osx)|
+|**Ubuntu 14.04** |[![Build Status](https://ci.swift.org/job/oss-swift-incremental-RA-linux-ubuntu-14_04/badge/icon)](https://ci.swift.org/job/oss-swift-incremental-RA-linux-ubuntu-14_04)|
+|**Ubuntu 15.10** |[![Build Status](https://ci.swift.org/job/oss-swift-incremental-RA-linux-ubuntu-15_10/badge/icon)](https://ci.swift.org/job/oss-swift-incremental-RA-linux-ubuntu-15_10)|
+
 **Welcome to Swift!**
 
 Swift is a high-performance system programming language.  It has a clean
@@ -56,9 +62,9 @@ with version 2 shipped with Ubuntu.
 If you are building on Ubuntu 14.04 LTS, you'll need to upgrade your clang
 compiler for C++14 support and create a symlink:
 
-     sudo apt-get install clang-3.6
-     sudo update-alternatives --install /usr/bin/clang clang /usr/bin/clang-3.6 100
-     sudo update-alternatives --install /usr/bin/clang++ clang++ /usr/bin/clang++-3.6 100
+    sudo apt-get install clang-3.6
+    sudo update-alternatives --install /usr/bin/clang clang /usr/bin/clang-3.6 100
+    sudo update-alternatives --install /usr/bin/clang++ clang++ /usr/bin/clang++-3.6 100
 
 ### Getting Sources for Swift and Related Projects
 

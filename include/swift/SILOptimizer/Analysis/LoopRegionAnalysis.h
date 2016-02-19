@@ -1,8 +1,8 @@
-//===--- LoopRegionAnalysis.h ---------------------------------------------===//
+//===--- LoopRegionAnalysis.h -----------------------------------*- C++ -*-===//
 //
 // This source file is part of the Swift.org open source project
 //
-// Copyright (c) 2014 - 2015 Apple Inc. and the Swift project authors
+// Copyright (c) 2014 - 2016 Apple Inc. and the Swift project authors
 // Licensed under Apache License v2.0 with Runtime Library Exception
 //
 // See http://swift.org/LICENSE.txt for license information
@@ -130,14 +130,14 @@
 
 namespace swift {
 
-class LoopRegionFunctionInfo;
-
 /// A loop region is a data structure which represents one of a basic block,
 /// loop, or function. In the case of a loop, function, it contains an internal
 /// data structure that represents the subregions of the loop/function. This
 /// data is tail allocated so that the basic block case is not penalized by
 /// storing this unnecessary information.
 class LoopRegion {
+  // FIXME: This should use llvm::TrailingObjects for its tail allocations, but
+  // that requires restructuring the file a bit.
 
   /// This is a data structure that is an unsigned integer with a top bit flag
   /// that says whether it is an RPO ID for a BB Region or is an RPO ID of the

@@ -1,8 +1,8 @@
-//===--- ModuleLoader.h - Module Loader Interface ----------- -*- C++ -*- -===//
+//===--- ModuleLoader.h - Module Loader Interface ---------------*- C++ -*-===//
 //
 // This source file is part of the Swift.org open source project
 //
-// Copyright (c) 2014 - 2015 Apple Inc. and the Swift project authors
+// Copyright (c) 2014 - 2016 Apple Inc. and the Swift project authors
 // Licensed under Apache License v2.0 with Runtime Library Exception
 //
 // See http://swift.org/LICENSE.txt for license information
@@ -34,7 +34,8 @@ enum class KnownProtocolKind : uint8_t;
 
 /// Records dependencies on files outside of the current module.
 class DependencyTracker {
-  llvm::SetVector<std::string, std::vector<std::string>> paths;
+  llvm::SetVector<std::string, std::vector<std::string>,
+                  llvm::SmallSet<std::string, 16>> paths;
 
 public:
   /// Adds a file as a dependency.

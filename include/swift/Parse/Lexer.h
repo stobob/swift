@@ -2,7 +2,7 @@
 //
 // This source file is part of the Swift.org open source project
 //
-// Copyright (c) 2014 - 2015 Apple Inc. and the Swift project authors
+// Copyright (c) 2014 - 2016 Apple Inc. and the Swift project authors
 // Licensed under Apache License v2.0 with Runtime Library Exception
 //
 // See http://swift.org/LICENSE.txt for license information
@@ -140,7 +140,7 @@ public:
   ///   need to take a LangOptions explicitly.
   /// \param InSILMode - whether we're parsing a SIL source file.
   ///   Unlike language options, this does affect primitive lexing, which
-  ///   means that APIs like getLofForEndOfToken really ought to take
+  ///   means that APIs like getLocForEndOfToken really ought to take
   ///   this flag; it's just that we don't care that much about fidelity
   ///   when parsing SIL files.
   Lexer(const LangOptions &Options,
@@ -423,6 +423,7 @@ private:
   void skipHashbang();
 
   void skipSlashStarComment();
+  void lexHash();
   void lexIdentifier();
   void lexDollarIdent();
   void lexOperatorIdentifier();
@@ -438,7 +439,6 @@ private:
   void tryLexEditorPlaceholder();
   const char *findEndOfCurlyQuoteStringLiteral(const char*);
 };
-  
   
 } // end namespace swift
 

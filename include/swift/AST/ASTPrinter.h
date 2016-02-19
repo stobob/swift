@@ -2,7 +2,7 @@
 //
 // This source file is part of the Swift.org open source project
 //
-// Copyright (c) 2014 - 2015 Apple Inc. and the Swift project authors
+// Copyright (c) 2014 - 2016 Apple Inc. and the Swift project authors
 // Licensed under Apache License v2.0 with Runtime Library Exception
 //
 // See http://swift.org/LICENSE.txt for license information
@@ -25,6 +25,8 @@ namespace swift {
   class TypeDecl;
   class Type;
   class Pattern;
+  class ExtensionDecl;
+  class NominalTypeDecl;
   struct PrintOptions;
 
 /// Describes the context in which a name is being printed, which
@@ -45,6 +47,7 @@ class ASTPrinter {
   unsigned PendingNewlines = 0;
   const Decl *PendingDeclPreCallback = nullptr;
   const Decl *PendingDeclLocCallback = nullptr;
+  const NominalTypeDecl *SynthesizeTarget = nullptr;
 
   void printTextImpl(StringRef Text);
 
@@ -60,9 +63,11 @@ public:
   /// Called before printing at the point which would be considered the location
   /// of the declaration (normally the name of the declaration).
   virtual void printDeclLoc(const Decl *D) {}
-  /// Called after printing the name of the declaration (the signature for
-  /// functions).
+  /// Called after printing the name of the declaration.
   virtual void printDeclNameEndLoc(const Decl *D) {}
+  /// Called after printing the name of a declaration, or in the case of
+  /// functions its signature.
+  virtual void printDeclNameOrSignatureEndLoc(const Decl *D) {}
   /// Called after finishing printing of a declaration.
   virtual void printDeclPost(const Decl *D) {}
 
@@ -72,7 +77,23 @@ public:
   /// Called when printing the referenced name of a module.
   virtual void printModuleRef(ModuleEntity Mod, Identifier Name);
 
+  /// Called before printing a synthesized extension.
+  virtual void printSynthesizedExtensionPre(const ExtensionDecl *ED,
+                                            const NominalTypeDecl *NTD) {}
+
+  /// Called after printing a synthesized extension.
+  virtual void printSynthesizedExtensionPost(const ExtensionDecl *ED,
+                                             const NominalTypeDecl *NTD) {}
+
   // Helper functions.
+
+  void printSeparator(bool &first, StringRef separator) {
+    if (first) {
+      first = false;
+    } else {
+      printTextImpl(separator);
+    }
+  }
 
   ASTPrinter &operator<<(StringRef Text) {
     printTextImpl(Text);
@@ -82,11 +103,17 @@ public:
   ASTPrinter &operator<<(unsigned long long N);
   ASTPrinter &operator<<(UUID UU);
 
+  ASTPrinter &operator<<(DeclName name);
+
   void printName(Identifier Name,
                  PrintNameContext Context = PrintNameContext::Normal);
 
   void setIndent(unsigned NumSpaces) {
     CurrentIndentation = NumSpaces;
+  }
+
+  void setSynthesizedTarget(NominalTypeDecl *Target) {
+    SynthesizeTarget = Target;
   }
 
   void printNewline() {

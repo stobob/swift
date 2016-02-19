@@ -2,7 +2,7 @@
 //
 // This source file is part of the Swift.org open source project
 //
-// Copyright (c) 2014 - 2015 Apple Inc. and the Swift project authors
+// Copyright (c) 2014 - 2016 Apple Inc. and the Swift project authors
 // Licensed under Apache License v2.0 with Runtime Library Exception
 //
 // See http://swift.org/LICENSE.txt for license information
@@ -87,4 +87,12 @@ struct _Prespecialize {
     }
     return count
   }
+}
+
+// Mark with optimize.sil.never to make sure its not get
+// rid of by dead function elimination. 
+@_semantics("optimize.sil.never")
+internal func _swift_forcePrespecializations() {
+  _Prespecialize._specializeArrays()
+  _Prespecialize._specializeRanges()
 }

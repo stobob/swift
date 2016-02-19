@@ -19,7 +19,8 @@ add_swift_unittest(SwiftBasicTests
   SuccessorMapTest.cpp
   Unicode.cpp
   BlotMapVectorTest.cpp
-
+  PointerIntEnumTest.cpp
+  ImmutablePointerSetTests.cpp
   ${generated_tests}
   )
 

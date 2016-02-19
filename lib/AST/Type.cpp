@@ -2,7 +2,7 @@
 //
 // This source file is part of the Swift.org open source project
 //
-// Copyright (c) 2014 - 2015 Apple Inc. and the Swift project authors
+// Copyright (c) 2014 - 2016 Apple Inc. and the Swift project authors
 // Licensed under Apache License v2.0 with Runtime Library Exception
 //
 // See http://swift.org/LICENSE.txt for license information
@@ -32,7 +32,6 @@
 #include <functional>
 #include <iterator>
 using namespace swift;
-using llvm::Fixnum;
 
 bool TypeLoc::isError() const {
   assert(wasValidated() && "Type not yet validated");
@@ -721,7 +720,7 @@ static Type getStrippedType(const ASTContext &context, Type type,
       Type eltTy = getStrippedType(context, elt.getType(),
                                    stripLabels, stripDefaultArgs);
       if (anyChanged || eltTy.getPointer() != elt.getType().getPointer() ||
-          (elt.hasInit() && stripDefaultArgs) ||
+          (elt.hasDefaultArg() && stripDefaultArgs) ||
           (elt.hasName() && stripLabels)) {
         if (!anyChanged) {
           elements.reserve(tuple->getNumElements());
@@ -763,38 +762,6 @@ static Type getStrippedType(const ASTContext &context, Type type,
 Type TypeBase::getUnlabeledType(ASTContext &Context) {
   return getStrippedType(Context, Type(this), /*labels=*/true,
                          /*defaultArgs=*/true);
-}
-
-Type TypeBase::getRelabeledType(ASTContext &ctx, 
-                                ArrayRef<Identifier> labels) {
-  if (auto tupleTy = dyn_cast<TupleType>(this)) {
-    assert(labels.size() == tupleTy->getNumElements() && 
-           "Wrong number of labels");
-    SmallVector<TupleTypeElt, 4> elements;
-    unsigned i = 0;
-    bool anyChanged = false;
-    for (const auto &elt : tupleTy->getElements()) {
-      if (elt.getName() != labels[i])
-        anyChanged = true;
-
-      elements.push_back(TupleTypeElt(elt.getType(), labels[i], 
-                                      elt.getDefaultArgKind(), elt.isVararg()));
-      ++i;
-    }
-
-    if (!anyChanged)
-      return this;
-
-    return TupleType::get(elements, ctx);
-  }
-
-  // If there is no label, the type is unchanged.
-  if (labels[0].empty())
-    return this;
-
-  // Create a one-element tuple to capture the label.
-  TupleTypeElt elt(this, labels[0]);
-  return TupleType::get(elt, ctx);  
 }
 
 Type TypeBase::getWithoutDefaultArgs(const ASTContext &Context) {
@@ -954,22 +921,6 @@ TypeDecl *TypeBase::getDirectlyReferencedTypeDecl() const {
   }
 
   return nullptr;
-}
-
-StringRef TypeBase::getInferredDefaultArgString() {
-  if (auto structDecl = getStructOrBoundGenericStruct()) {
-    if (structDecl->getClangDecl()) {
-      for (auto attr : structDecl->getAttrs()) {
-        if (auto synthesizedProto = dyn_cast<SynthesizedProtocolAttr>(attr)) {
-          if (synthesizedProto->getProtocolKind()
-              == KnownProtocolKind::OptionSetType)
-            return "[]";
-        }
-      }
-    }
-  }
-
-  return "nil";
 }
 
 /// \brief Collect the protocols in the existential type T into the given
@@ -1398,7 +1349,7 @@ unsigned GenericTypeParamType::getDepth() const {
     return param->getDepth();
   }
 
-  auto fixedNum = ParamOrDepthIndex.get<Fixnum<31>>();
+  auto fixedNum = ParamOrDepthIndex.get<DepthIndexTy>();
   return fixedNum >> 16;
 }
 
@@ -1407,7 +1358,7 @@ unsigned GenericTypeParamType::getIndex() const {
     return param->getIndex();
   }
 
-  auto fixedNum = ParamOrDepthIndex.get<Fixnum<31>>();
+  auto fixedNum = ParamOrDepthIndex.get<DepthIndexTy>();
   return fixedNum & 0xFFFF;
 }
 
@@ -1421,7 +1372,7 @@ Identifier GenericTypeParamType::getName() const {
   // getASTContext() doesn't actually mutate an already-canonical type.
   auto &C = const_cast<GenericTypeParamType*>(this)->getASTContext();
   auto &names = C.CanonicalGenericTypeParamTypeNames;
-  unsigned depthIndex = ParamOrDepthIndex.get<Fixnum<31>>();
+  unsigned depthIndex = ParamOrDepthIndex.get<DepthIndexTy>();
   auto cached = names.find(depthIndex);
   if (cached != names.end())
     return cached->second;
@@ -1501,7 +1452,7 @@ bool TypeBase::isSpelledLike(Type other) {
       return false;
     for (size_t i = 0, sz = tMe->getNumElements(); i < sz; ++i) {
       auto &myField = tMe->getElement(i), &theirField = tThem->getElement(i);
-      if (myField.hasInit() != theirField.hasInit())
+      if (myField.hasDefaultArg() != theirField.hasDefaultArg())
         return false;
       
       if (myField.getName() != theirField.getName())
@@ -1867,7 +1818,7 @@ bool TypeBase::canOverride(Type other, bool allowUnsafeParameterOverride,
 /// value.
 bool TupleType::hasAnyDefaultValues() const {
   for (const TupleTypeElt &Elt : Elements)
-    if (Elt.hasInit())
+    if (Elt.hasDefaultArg())
       return true;
   return false;
 }
@@ -1893,7 +1844,7 @@ int TupleType::getElementForScalarInit() const {
   int FieldWithoutDefault = -1;
   for (unsigned i = 0, e = Elements.size(); i != e; ++i) {
     // Ignore fields with a default value.
-    if (Elements[i].hasInit()) continue;
+    if (Elements[i].hasDefaultArg()) continue;
     
     // If we already saw a non-vararg field missing a default value, then we
     // cannot assign a scalar to this tuple.
@@ -2157,22 +2108,6 @@ PolymorphicFunctionType::getGenericParameters() const {
   return Params->getParams();
 }
 
-FunctionType *PolymorphicFunctionType::substGenericArgs(Module *module,
-                                                        ArrayRef<Type> args) {
-  TypeSubstitutionMap map;
-  for (auto &param : getGenericParams().getNestedGenericParams()) {
-    map.insert(std::make_pair(param->getArchetype(), args.front()));
-    args = args.slice(1);
-  }
-  
-  assert(args.empty()
-         && "number of args did not match number of generic params");
-  
-  Type input = getInput().subst(module, map, SubstFlags::IgnoreMissing);
-  Type result = getResult().subst(module, map, SubstFlags::IgnoreMissing);
-  return FunctionType::get(input, result, getExtInfo());
-}
-
 TypeSubstitutionMap
 GenericParamList::getSubstitutionMap(ArrayRef<swift::Substitution> Subs) const {
   TypeSubstitutionMap map;
@@ -2186,16 +2121,6 @@ GenericParamList::getSubstitutionMap(ArrayRef<swift::Substitution> Subs) const {
   
   assert(Subs.empty() && "did not use all substitutions?!");
   return map;
-}
-
-FunctionType *PolymorphicFunctionType::substGenericArgs(Module *module,
-                                                  ArrayRef<Substitution> subs) {
-  TypeSubstitutionMap map
-    = getGenericParams().getSubstitutionMap(subs);
-  
-  Type input = getInput().subst(module, map, SubstFlags::IgnoreMissing);
-  Type result = getResult().subst(module, map, SubstFlags::IgnoreMissing);
-  return FunctionType::get(input, result, getExtInfo());
 }
 
 FunctionType *
@@ -2253,6 +2178,7 @@ const {
   for (auto &reqt : getRequirements()) {
     switch (reqt.getKind()) {
     case RequirementKind::Conformance:
+    case RequirementKind::Superclass:
     case RequirementKind::WitnessMarker:
       // Substituting the parameter eliminates conformance constraints rooted
       // in the parameter.
@@ -2313,15 +2239,22 @@ static Type getMemberForBaseType(Module *module,
   // If the parent is an archetype, extract the child archetype with the
   // given name.
   if (auto archetypeParent = substBase->getAs<ArchetypeType>()) {
-    if (!archetypeParent->hasNestedType(name)) {
-      const auto parent = archetypeParent->getParent();
-      if (!parent)
-        return ErrorType::get(module->getASTContext());
-      if (parent->isSelfDerived())
-        return parent->getNestedTypeValue(name);
+    if (archetypeParent->hasNestedType(name))
+      return archetypeParent->getNestedTypeValue(name);
+
+    if (auto parent = archetypeParent->getParent()) {
+      // If the archetype doesn't have the requested type and the parent is not
+      // self derived, error out
+      return parent->isSelfDerived() ? parent->getNestedTypeValue(name)
+                                     : ErrorType::get(module->getASTContext());
     }
-    
-    return archetypeParent->getNestedTypeValue(name);
+
+    // If looking for an associated type and the archetype is constrained to a
+    // class, continue to the default associated type lookup
+    if (!assocType || !archetypeParent->getSuperclass()) {
+      // else just error out
+      return ErrorType::get(module->getASTContext());
+    }
   }
 
   // If the parent is a type variable, retrieve its member type
@@ -2407,7 +2340,8 @@ Type Type::subst(Module *module, TypeSubstitutionMap &substitutions,
   };
   
   return transform([&](Type type) -> Type {
-    assert(!isa<SILFunctionType>(type.getPointer()) &&
+    assert((options.contains(SubstFlags::AllowLoweredTypes) ||
+            !isa<SILFunctionType>(type.getPointer())) &&
            "should not be doing AST type-substitution on a lowered SIL type;"
            "use SILType::subst");
 
@@ -2468,7 +2402,7 @@ Type Type::subst(Module *module, TypeSubstitutionMap &substitutions,
   });
 }
 
-TypeSubstitutionMap TypeBase::getMemberSubstitutions(DeclContext *dc) {
+TypeSubstitutionMap TypeBase::getMemberSubstitutions(const DeclContext *dc) {
 
   // Ignore lvalues in the base type.
   Type baseTy(getRValueType());
@@ -2484,7 +2418,7 @@ TypeSubstitutionMap TypeBase::getMemberSubstitutions(DeclContext *dc) {
 
   // If the member is part of a protocol or extension thereof, we need
   // to substitute in the type of Self.
-  if (dc->isProtocolOrProtocolExtensionContext()) {
+  if (dc->getAsProtocolOrProtocolExtensionContext()) {
     // We only substitute into archetypes for now for protocols.
     // FIXME: This seems like an odd restriction. Whatever is depending on
     // this, shouldn't.
@@ -2504,8 +2438,9 @@ TypeSubstitutionMap TypeBase::getMemberSubstitutions(DeclContext *dc) {
   LazyResolver *resolver = dc->getASTContext().getLazyResolver();
 
   // Find the superclass type with the context matching that of the member.
-  auto ownerNominal = dc->isNominalTypeOrNominalTypeExtensionContext();
+  auto ownerNominal = dc->getAsNominalTypeOrNominalTypeExtensionContext();
   while (!baseTy->is<ErrorType>() &&
+         baseTy->getAnyNominal() &&
          baseTy->getAnyNominal() != ownerNominal) {
     baseTy = baseTy->getSuperclass(resolver);
     assert(baseTy && "Couldn't find appropriate context");
@@ -2558,7 +2493,7 @@ Type TypeBase::getTypeOfMember(Module *module, const ValueDecl *member,
 }
 
 Type TypeBase::getTypeOfMember(Module *module, Type memberType,
-                               DeclContext *memberDC) {
+                               const DeclContext *memberDC) {
   // If the member is not part of a type, there's nothing to substitute.
   if (!memberDC->isTypeContext())
     return memberType;
@@ -2672,13 +2607,16 @@ case TypeKind::Id:
     auto fnTy = cast<SILFunctionType>(base);
     bool changed = false;
 
-    SILResultInfo transResult = fnTy->getResult();
-    if (transformSILResult(transResult, changed, fn)) return Type();
-
     SmallVector<SILParameterInfo, 8> transInterfaceParams;
     for (SILParameterInfo param : fnTy->getParameters()) {
       if (transformSILParameter(param, changed, fn)) return Type();
       transInterfaceParams.push_back(param);
+    }
+
+    SmallVector<SILResultInfo, 8> transInterfaceResults;
+    for (SILResultInfo result : fnTy->getAllResults()) {
+      if (transformSILResult(result, changed, fn)) return Type();
+      transInterfaceResults.push_back(result);
     }
 
     Optional<SILResultInfo> transErrorResult;
@@ -2694,7 +2632,7 @@ case TypeKind::Id:
                                 fnTy->getExtInfo(),
                                 fnTy->getCalleeConvention(),
                                 transInterfaceParams,
-                                transResult,
+                                transInterfaceResults,
                                 transErrorResult,
                                 Ptr->getASTContext());
   }
@@ -3058,7 +2996,8 @@ case TypeKind::Id:
   case TypeKind::LValue: {
     auto lvalue = cast<LValueType>(base);
     auto objectTy = lvalue->getObjectType().transform(fn);
-    if (!objectTy) return Type();
+    if (!objectTy || objectTy->is<ErrorType>())
+      return objectTy;
 
     return objectTy.getPointer() == lvalue->getObjectType().getPointer() ?
       *this : LValueType::get(objectTy);
@@ -3067,7 +3006,8 @@ case TypeKind::Id:
   case TypeKind::InOut: {
     auto inout = cast<InOutType>(base);
     auto objectTy = inout->getObjectType().transform(fn);
-    if (!objectTy) return Type();
+    if (!objectTy || objectTy->is<ErrorType>())
+      return objectTy;
     
     return objectTy.getPointer() == inout->getObjectType().getPointer() ?
       *this : InOutType::get(objectTy);

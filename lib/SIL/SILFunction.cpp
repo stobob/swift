@@ -2,7 +2,7 @@
 //
 // This source file is part of the Swift.org open source project
 //
-// Copyright (c) 2014 - 2015 Apple Inc. and the Swift project authors
+// Copyright (c) 2014 - 2016 Apple Inc. and the Swift project authors
 // Licensed under Apache License v2.0 with Runtime Library Exception
 //
 // See http://swift.org/LICENSE.txt for license information
@@ -16,7 +16,6 @@
 #include "swift/SIL/SILInstruction.h"
 #include "swift/SIL/SILArgument.h"
 #include "swift/SIL/CFG.h"
-#include "swift/SIL/SILModule.h"
 // FIXME: For mapTypeInContext
 #include "swift/AST/ArchetypeBuilder.h"
 #include "llvm/ADT/Optional.h"
@@ -90,11 +89,13 @@ SILFunction::SILFunction(SILModule &Module, SILLinkage Linkage,
     Linkage(unsigned(Linkage)),
     KeepAsPublic(false),
     ForeignBody(false),
-    EK(E) {
+    EffectsKindAttr(E) {
   if (InsertBefore)
     Module.functions.insert(SILModule::iterator(InsertBefore), this);
   else
     Module.functions.push_back(this);
+
+  Module.removeFromZombieList(Name);
 
   // Set our BB list to have this function as its parent. This enables us to
   // splice efficiently basic blocks in between functions.
@@ -166,7 +167,7 @@ ASTContext &SILFunction::getASTContext() const {
 bool SILFunction::shouldOptimize() const {
   if (Module.getStage() == SILStage::Raw)
     return true;
-  return !hasSemanticsString("optimize.sil.never");
+  return !hasSemanticsAttr("optimize.sil.never");
 }
 
 Type SILFunction::mapTypeIntoContext(Type type) const {
@@ -221,11 +222,13 @@ struct SubstDependentSILType
       params.push_back(param.map([&](CanType pt) -> CanType {
         return visit(pt);
       }));
-    
-    SILResultInfo result = t->getResult().map([&](CanType elt) -> CanType {
-        return visit(elt);
-      });
 
+    SmallVector<SILResultInfo, 4> results;
+    for (auto &result : t->getAllResults())
+      results.push_back(result.map([&](CanType pt) -> CanType {
+        return visit(pt);
+      }));
+    
     Optional<SILResultInfo> errorResult;
     if (t->hasErrorResult()) {
       errorResult = t->getErrorResult().map([&](CanType elt) -> CanType {
@@ -236,7 +239,7 @@ struct SubstDependentSILType
     return SILFunctionType::get(t->getGenericSignature(),
                                 t->getExtInfo(),
                                 t->getCalleeConvention(),
-                                params, result, errorResult,
+                                params, results, errorResult,
                                 t->getASTContext());
   }
   

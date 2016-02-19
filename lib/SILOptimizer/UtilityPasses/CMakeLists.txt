@@ -4,6 +4,7 @@ set(UTILITYPASSES_SOURCES
   UtilityPasses/ComputeDominanceInfo.cpp
   UtilityPasses/ComputeLoopInfo.cpp
   UtilityPasses/CFGPrinter.cpp
+  UtilityPasses/EpilogueRetainReleaseMatcherDumper.cpp
   UtilityPasses/EscapeAnalysisDumper.cpp
   UtilityPasses/FunctionOrderPrinter.cpp
   UtilityPasses/IVInfoPrinter.cpp
@@ -13,6 +14,8 @@ set(UTILITYPASSES_SOURCES
   UtilityPasses/LoopCanonicalizer.cpp
   UtilityPasses/LoopRegionPrinter.cpp
   UtilityPasses/LSLocationPrinter.cpp
+  UtilityPasses/MemBehaviorDumper.cpp
+  UtilityPasses/RCIdentityDumper.cpp
   UtilityPasses/SideEffectsDumper.cpp
   UtilityPasses/StripDebugInfo.cpp
   PARENT_SCOPE)

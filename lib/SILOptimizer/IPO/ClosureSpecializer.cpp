@@ -1,8 +1,8 @@
-//===---- ClosureSpecializer.cpp ------ Performs Closure Specialization----===//
+//===--- ClosureSpecializer.cpp - Performs Closure Specialization ---------===//
 //
 // This source file is part of the Swift.org open source project
 //
-// Copyright (c) 2014 - 2015 Apple Inc. and the Swift project authors
+// Copyright (c) 2014 - 2016 Apple Inc. and the Swift project authors
 // Licensed under Apache License v2.0 with Runtime Library Exception
 //
 // See http://swift.org/LICENSE.txt for license information
@@ -190,18 +190,18 @@ public:
   createNewClosure(SILBuilder &B, SILValue V,
                    llvm::SmallVectorImpl<SILValue> &Args) const {
     if (isa<PartialApplyInst>(getClosure()))
-      return B.createPartialApply(getClosure()->getLoc(), V, V.getType(), {},
-                                  Args, getClosure()->getType(0));
+      return B.createPartialApply(getClosure()->getLoc(), V, V->getType(), {},
+                                  Args, getClosure()->getType());
 
     assert(isa<ThinToThickFunctionInst>(getClosure()) &&
            "We only support partial_apply and thin_to_thick_function");
     return B.createThinToThickFunction(getClosure()->getLoc(), V,
-                                       getClosure()->getType(0));
+                                       getClosure()->getType());
   }
 
   FullApplySite getApplyInst() const { return AI; }
 
-  void createName(llvm::SmallString<64> &NewName) const;
+  std::string createName() const;
 
   OperandValueArrayRef getArguments() const {
     if (auto *PAI = dyn_cast<PartialApplyInst>(getClosure()))
@@ -288,7 +288,7 @@ static void rewriteApplyInst(const CallSiteDescriptor &CSDesc,
   for (auto Arg : CSDesc.getArguments()) {
     NewArgs.push_back(Arg);
 
-    SILType ArgTy = Arg.getType();
+    SILType ArgTy = Arg->getType();
 
     // If our argument is of trivial type, continue...
     if (ArgTy.isTrivial(M))
@@ -314,7 +314,7 @@ static void rewriteApplyInst(const CallSiteDescriptor &CSDesc,
     // executed more frequently than the closure (for example, if the closure is
     // created in a loop preheader and the callee taking the closure is executed
     // in the loop). In such a case we must keep the argument live across the
-    // call site of the callee and emit a matching retain for every innvocation
+    // call site of the callee and emit a matching retain for every invocation
     // of the callee.
     //
     //    %closure = partial_apply (%arg)
@@ -386,20 +386,21 @@ static void rewriteApplyInst(const CallSiteDescriptor &CSDesc,
   // AI from parent?
 }
 
-void CallSiteDescriptor::createName(llvm::SmallString<64> &NewName) const {
-  llvm::raw_svector_ostream buffer(NewName);
-  Mangle::Mangler M(buffer);
+std::string CallSiteDescriptor::createName() const {
+  Mangle::Mangler M;
   auto P = SpecializationPass::ClosureSpecializer;
   FunctionSignatureSpecializationMangler FSSM(P, M, getApplyCallee());
+
   if (auto *PAI = dyn_cast<PartialApplyInst>(getClosure())) {
     FSSM.setArgumentClosureProp(getClosureIndex(), PAI);
     FSSM.mangle();
-    return;
+    return M.finalize();
   }
 
   auto *TTTFI = cast<ThinToThickFunctionInst>(getClosure());
   FSSM.setArgumentClosureProp(getClosureIndex(), TTTFI);
   FSSM.mangle();
+  return M.finalize();
 }
 
 void CallSiteDescriptor::extendArgumentLifetime(SILValue Arg) const {
@@ -418,8 +419,7 @@ void CallSiteDescriptor::extendArgumentLifetime(SILValue Arg) const {
 
 static void specializeClosure(ClosureInfo &CInfo,
                               CallSiteDescriptor &CallDesc) {
-  llvm::SmallString<64> NewFName;
-  CallDesc.createName(NewFName);
+  auto NewFName = CallDesc.createName();
   DEBUG(llvm::dbgs() << "    Perform optimizations with new name " << NewFName
                      << '\n');
 
@@ -454,7 +454,7 @@ static bool isSupportedClosure(const SILInstruction *Closure) {
     // If any arguments are not objects, return false. This is a temporary
     // limitation.
     for (SILValue Arg : PAI->getArguments())
-      if (!Arg.getType().isObject())
+      if (!Arg->getType().isObject())
         return false;
 
     // Ok, it is a closure we support, set Callee.
@@ -471,7 +471,7 @@ static bool isSupportedClosure(const SILInstruction *Closure) {
   //
   // TODO: We can probably handle other partial applies here.
   auto *FRI = dyn_cast<FunctionRefInst>(Callee);
-  if (!FRI || FRI->getFunctionType()->hasIndirectResult())
+  if (!FRI || FRI->getFunctionType()->hasIndirectResults())
     return false;
 
   // Otherwise, we do support specializing this closure.
@@ -502,7 +502,7 @@ ClosureSpecCloner::initCloned(const CallSiteDescriptor &CallSiteDesc,
   // First add to NewParameterInfoList all of the SILParameterInfo in the
   // original function except for the closure.
   CanSILFunctionType ClosureUserFunTy = ClosureUser->getLoweredFunctionType();
-  unsigned Index = 0;
+  unsigned Index = ClosureUserFunTy->getNumIndirectResults();
   for (auto &param : ClosureUserFunTy->getParameters()) {
     if (Index != CallSiteDesc.getClosureIndex())
       NewParameterInfoList.push_back(param);
@@ -540,7 +540,7 @@ ClosureSpecCloner::initCloned(const CallSiteDescriptor &CallSiteDesc,
   auto ClonedTy = SILFunctionType::get(
       ClosureUserFunTy->getGenericSignature(), ClosureUserFunTy->getExtInfo(),
       ClosureUserFunTy->getCalleeConvention(), NewParameterInfoList,
-      ClosureUserFunTy->getResult(),
+      ClosureUserFunTy->getAllResults(),
       ClosureUserFunTy->getOptionalErrorResult(),
       M.getASTContext());
 
@@ -559,7 +559,8 @@ ClosureSpecCloner::initCloned(const CallSiteDescriptor &CallSiteDesc,
       ClosureUser->getInlineStrategy(), ClosureUser->getEffectsKind(),
       ClosureUser, ClosureUser->getDebugScope());
   Fn->setDeclCtx(ClosureUser->getDeclContext());
-  Fn->setSemanticsAttr(ClosureUser->getSemanticsAttr());
+  for (auto &Attr : ClosureUser->getSemanticsAttrs())
+    Fn->addSemanticsAttr(Attr);
   return Fn;
 }
 
@@ -775,8 +776,13 @@ void ClosureSpecializer::gatherCallSites(
           continue;
         }
 
+        auto NumIndirectResults =
+          AI.getSubstCalleeType()->getNumIndirectResults();
+        assert(ClosureIndex.getValue() >= NumIndirectResults);
+        auto ClosureParamIndex = ClosureIndex.getValue() - NumIndirectResults;
+
         auto ParamInfo = AI.getSubstCalleeType()->getParameters();
-        SILParameterInfo ClosureParamInfo = ParamInfo[ClosureIndex.getValue()];
+        SILParameterInfo ClosureParamInfo = ParamInfo[ClosureParamIndex];
 
         // Get all non-failure exit BBs in the Apply Callee if our partial apply
         // is guaranteed. If we do not understand one of the exit BBs, bail.

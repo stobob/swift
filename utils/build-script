@@ -1,27 +1,29 @@
 #!/usr/bin/env python
-#===--- build-script - The ultimate tool for building Swift ----------------===#
+# utils/build-script - The ultimate tool for building Swift -*- python -*-
 #
-## This source file is part of the Swift.org open source project
-##
-## Copyright (c) 2014 - 2015 Apple Inc. and the Swift project authors
-## Licensed under Apache License v2.0 with Runtime Library Exception
-##
-## See http://swift.org/LICENSE.txt for license information
-## See http://swift.org/CONTRIBUTORS.txt for the list of Swift project authors
+# This source file is part of the Swift.org open source project
 #
-#===------------------------------------------------------------------------===#
+# Copyright (c) 2014 - 2016 Apple Inc. and the Swift project authors
+# Licensed under Apache License v2.0 with Runtime Library Exception
+#
+# See http://swift.org/LICENSE.txt for license information
+# See http://swift.org/CONTRIBUTORS.txt for the list of Swift project authors
 
 from __future__ import print_function
 
 import argparse
 import multiprocessing
 import os
+import platform
 import shutil
 import sys
 import textwrap
 
+# FIXME: Instead of modifying the system path in order to enable imports from
+#        other directories, all Python modules related to the build script
+#        should be moved to the `swift_build_support` module.
+#        For additional information, see: https://bugs.swift.org/browse/SR-237.
 sys.path.append(os.path.dirname(__file__))
-
 from SwiftBuildSupport import (
     HOME,
     SWIFT_BUILD_ROOT,
@@ -31,7 +33,18 @@ from SwiftBuildSupport import (
     get_preset_options,
     print_with_argv0,
     quote_shell_command,
+    WorkingDirectory,
 )
+
+sys.path.append(os.path.join(os.path.dirname(__file__), 'swift_build_support'))
+import swift_build_support.clang
+import swift_build_support.cmake
+import swift_build_support.debug
+import swift_build_support.ninja
+import swift_build_support.tar
+import swift_build_support.targets
+from swift_build_support.migration import migrate_impl_args
+
 
 # Main entry point for the preset mode.
 def main_preset():
@@ -85,10 +98,10 @@ def main_preset():
     preset_args = get_preset_options(
         args.preset_substitutions, args.preset_file_names, args.preset)
 
-    build_script_args = [ sys.argv[0] ]
+    build_script_args = [sys.argv[0]]
     build_script_args += preset_args
     if args.distcc:
-        build_script_args += [ "--distcc" ]
+        build_script_args += ["--distcc"]
 
     print_with_argv0(
         "using preset '" + args.preset + "', which expands to " +
@@ -147,11 +160,12 @@ SWIFT_SOURCE_ROOT: a directory containing the source for LLVM, Clang, Swift.
    $SWIFT_SOURCE_ROOT/llvm
                      /clang
                      /swift
-                     /lldb                      (optional)
-                     /llbuild                   (optional)
-                     /swiftpm                   (optional, requires llbuild)
-                     /swift-corelibs-xctest     (optional)
-                     /swift-corelibs-foundation (optional)
+                     /lldb                       (optional)
+                     /llbuild                    (optional)
+                     /swiftpm                    (optional, requires llbuild)
+                     /swift-corelibs-xctest      (optional)
+                     /swift-corelibs-foundation  (optional)
+                     /swift-corelibs-libdispatch (optional)
 
 SWIFT_BUILD_ROOT: a directory in which to create out-of-tree builds.
                   Defaults to "$SWIFT_SOURCE_ROOT/build/".
@@ -280,6 +294,15 @@ It is a policy decision aimed at making the builds uniform across all
 environments and easily reproducible by engineers who are not familiar with the
 details of the setups of other systems or automated environments.""")
 
+    targets_group = parser.add_argument_group(
+        title="Host and cross-compilation targets")
+    targets_group.add_argument(
+        "--host-target",
+        help="The host target. LLVM, Clang, and Swift will be built for this "
+             "target. The built LLVM and Clang will be used to compile Swift "
+             "for the cross-compilation targets.",
+        default=swift_build_support.targets.host_target())
+
     projects_group = parser.add_argument_group(
         title="Options to select projects")
     projects_group.add_argument("-l", "--lldb",
@@ -302,6 +325,10 @@ details of the setups of other systems or automated environments.""")
         help="build foundation",
         action="store_true",
         dest="build_foundation")
+    projects_group.add_argument("--libdispatch",
+        help="build libdispatch",
+        action="store_true",
+        dest="build_libdispatch")
 
     extra_actions_group = parser.add_argument_group(
         title="Extra actions to perform before or in addition to building")
@@ -311,6 +338,10 @@ details of the setups of other systems or automated environments.""")
     extra_actions_group.add_argument("--export-compile-commands",
         help="generate compilation databases in addition to building",
         action="store_true")
+    extra_actions_group.add_argument("--symbols-package",
+        metavar="PATH",
+        help="if provided, an archive of the symbols directory will be "
+             "generated at this path")
 
     build_variant_group = parser.add_mutually_exclusive_group(required=False)
     build_variant_group.add_argument("-d", "--debug",
@@ -366,6 +397,11 @@ build the Debug variant of the Swift standard library and SDK overlay""",
         action="store_const",
         const="Debug",
         dest="foundation_build_variant")
+    build_variant_override_group.add_argument("--debug-libdispatch",
+        help="build the Debug variant of libdispatch",
+        action="store_const",
+        const="Debug",
+        dest="libdispatch_build_variant")
 
     assertions_group = parser.add_mutually_exclusive_group(required=False)
     assertions_group.add_argument("--assertions",
@@ -458,6 +494,9 @@ build the Debug variant of the Swift standard library and SDK overlay""",
     run_tests_group.add_argument("-T", "--validation-test",
         help="run the validation test suite (implies --test)",
         action="store_true")
+    run_tests_group.add_argument("-B", "--benchmark",
+        help="run the Swift Benchmark Suite after building",
+        action="store_true")
 
     parser.add_argument("-o", "--test-optimized",
         help="run the test suite in optimized mode too (implies --test)",
@@ -469,6 +508,10 @@ build the Debug variant of the Swift standard library and SDK overlay""",
         help="generate build directory only without building",
         action="store_true")
 
+    run_build_group.add_argument("--skip-build-benchmarks",
+        help="skip building Swift Benchmark Suite",
+        action="store_true")
+
     parser.add_argument("-i", "--ios",
         help="""
 also build for iOS, but disallow tests that require an iOS device""",
@@ -476,7 +519,7 @@ also build for iOS, but disallow tests that require an iOS device""",
 
     parser.add_argument("--tvos",
         help="""
-also build for tvOS, but disallow tests that require an tvos device""",
+also build for tvOS, but disallow tests that require a tvos device""",
         action="store_true")
 
     parser.add_argument("--watchos",
@@ -484,10 +527,25 @@ also build for tvOS, but disallow tests that require an tvos device""",
 also build for Apple watchos, but disallow tests that require an watchOS device""",
         action="store_true")
 
+    parser.add_argument("--swift-analyze-code-coverage",
+        help="""enable code coverage analysis in Swift (false, not-merged,
+        merged).""",
+        choices=["false", "not-merged", "merged"],
+        default="false",  # so CMake can see the inert mode as a false value
+        dest="swift_analyze_code_coverage")
+
     parser.add_argument("--build-subdir",
         help="""
 name of the directory under $SWIFT_BUILD_ROOT where the build products will be
 placed""",
+        metavar="PATH")
+    parser.add_argument("--install-prefix",
+        help="The installation prefix. This is where built Swift products "
+             "(like bin, lib, and include) will be installed.",
+        metavar="PATH",
+        default=swift_build_support.targets.install_prefix())
+    parser.add_argument("--install-symroot",
+        help="the path to install debug symbols into",
         metavar="PATH")
 
     parser.add_argument("-j", "--jobs",
@@ -497,26 +555,58 @@ the number of parallel build jobs to use""",
         dest="build_jobs",
         default=multiprocessing.cpu_count())
 
+    parser.add_argument("--darwin-xcrun-toolchain",
+                        help="the name of the toolchain to use on Darwin",
+                        default="default")
+    parser.add_argument("--cmake",
+                        help="the path to a CMake executable that will be "
+                             "used to build Swift")
+    parser.add_argument("--show-sdks",
+                        help="print installed Xcode and SDK versions",
+                        action="store_true")
+
     parser.add_argument("--extra-swift-args", help=textwrap.dedent("""
     Pass through extra flags to swift in the form of a cmake list 'module_regexp;flag'. Can
     be called multiple times to add multiple such module_regexp flag pairs. All semicolons
-    in flags must be scaped with a '\'"""),
+    in flags must be escaped with a '\'"""),
                         action="append", dest="extra_swift_args", default=[])
 
     parser.add_argument("build_script_impl_args",
         help="",
         nargs="*")
 
-    args = parser.parse_args()
+    args = parser.parse_args(migrate_impl_args(sys.argv[1:], [
+        '--darwin-xcrun-toolchain',
+        '--cmake',
+        '--host-target',
+        '--skip-build',
+        '--show-sdks',
+        '--install-prefix',
+        '--install-symroot',
+        '--symbols-package',
+    ]))
+
+    if args.host_target is None:
+        print_with_argv0("Unknown operating system.")
+        return 1
+
+    if args.symbols_package:
+        if not os.path.isabs(args.symbols_package):
+            print('--symbols-package must be an absolute path '
+                  '(was \'{}\')'.format(args.symbols_package))
+            return 1
+        if not args.install_symroot:
+            print_with_argv0("--install-symroot is required when specifying "
+                             "--symbols-package.")
+            return 1
 
     # Build cmark if any cmark-related options were specified.
     if (args.cmark_build_variant is not None):
         args.build_cmark = True
 
     # Build LLDB if any LLDB-related options were specified.
-    if (args.lldb_build_variant is not None or
-        args.lldb_assertions is not None):
-       args.build_lldb = True
+    if (args.lldb_build_variant is not None or args.lldb_assertions is not None):
+        args.build_lldb = True
 
     # Set the default build variant.
     if args.build_variant is None:
@@ -540,6 +630,9 @@ the number of parallel build jobs to use""",
 
     if args.foundation_build_variant is None:
         args.foundation_build_variant = args.build_variant
+
+    if args.libdispatch_build_variant is None:
+        args.libdispatch_build_variant = args.build_variant
 
     # Assertions are enabled by default.
     if args.assertions is None:
@@ -592,6 +685,7 @@ the number of parallel build jobs to use""",
             "--skip-test-swiftpm",
             "--skip-test-xctest",
             "--skip-test-foundation",
+            "--skip-test-libdispatch",
             "--skip-test-ios",
             "--skip-test-tvos",
             "--skip-test-watchos",
@@ -600,6 +694,11 @@ the number of parallel build jobs to use""",
     if not args.validation_test:
         build_script_impl_inferred_args += [
             "--skip-test-validation"
+        ]
+
+    if not args.benchmark:
+        build_script_impl_inferred_args += [
+            "--skip-test-benchmarks"
         ]
 
     if not args.test_optimized:
@@ -650,9 +749,44 @@ the number of parallel build jobs to use""",
             "--skip-build-foundation"
         ]
 
+    if not args.build_libdispatch:
+        build_script_impl_inferred_args += [
+            "--skip-build-libdispatch"
+        ]
+
+    if args.skip_build_benchmarks:
+        build_script_impl_inferred_args += [
+            "--skip-build-benchmarks"
+        ]
+
     if args.skip_build:
         build_script_impl_inferred_args += [
-            "--skip-build"
+            "--skip-build-cmark",
+            "--skip-build-llvm",
+            "--skip-build-swift",
+            "--skip-build-osx",
+            "--skip-build-ios",
+            "--skip-build-ios-device",
+            "--skip-build-ios-simulator",
+            "--skip-build-tvos",
+            "--skip-build-tvos_device",
+            "--skip-build-tvos-simulator",
+            "--skip-build-watchos",
+            "--skip-build-watchos-device",
+            "--skip-build-watchos-simulator",
+            "--skip-build-lldb",
+            "--skip-build-llbuild",
+            "--skip-build-swiftpm",
+            "--skip-build-xctest",
+            "--skip-build-foundation",
+            "--skip-build-libdispatch",
+            "--skip-build-benchmarks",
+        ]
+
+    if platform.system() == 'Darwin':
+        build_script_impl_inferred_args += [
+            "--toolchain-prefix",
+            swift_build_support.targets.darwin_toolchain_prefix(args.install_prefix),
         ]
 
     if args.build_subdir is None:
@@ -669,6 +803,8 @@ the number of parallel build jobs to use""",
         swift_build_dir_label = args.swift_build_variant
         if args.swift_assertions:
             swift_build_dir_label += "Assert"
+        if args.swift_analyze_code_coverage != "false":
+            swift_build_dir_label += "Coverage"
 
         swift_stdlib_build_dir_label = args.swift_stdlib_build_variant
         if args.swift_stdlib_assertions:
@@ -676,25 +812,25 @@ the number of parallel build jobs to use""",
 
         # FIXME: mangle LLDB build configuration into the directory name.
         if (llvm_build_dir_label == swift_build_dir_label and
-            llvm_build_dir_label == swift_stdlib_build_dir_label and
-            llvm_build_dir_label == cmark_build_dir_label):
+                llvm_build_dir_label == swift_stdlib_build_dir_label and
+                llvm_build_dir_label == cmark_build_dir_label):
             # Use a simple directory name if all projects use the same build type.
             args.build_subdir += "-" + llvm_build_dir_label
         elif (llvm_build_dir_label != swift_build_dir_label and
-            llvm_build_dir_label == swift_stdlib_build_dir_label and
-            llvm_build_dir_label == cmark_build_dir_label):
+                llvm_build_dir_label == swift_stdlib_build_dir_label and
+                llvm_build_dir_label == cmark_build_dir_label):
             # Swift build type differs.
             args.build_subdir += "-" + llvm_build_dir_label
             args.build_subdir += "+swift-" + swift_build_dir_label
         elif (llvm_build_dir_label == swift_build_dir_label and
-            llvm_build_dir_label != swift_stdlib_build_dir_label and
-            llvm_build_dir_label == cmark_build_dir_label):
+                llvm_build_dir_label != swift_stdlib_build_dir_label and
+                llvm_build_dir_label == cmark_build_dir_label):
             # Swift stdlib build type differs.
             args.build_subdir += "-" + llvm_build_dir_label
             args.build_subdir += "+stdlib-" + swift_stdlib_build_dir_label
         elif (llvm_build_dir_label == swift_build_dir_label and
-            llvm_build_dir_label == swift_stdlib_build_dir_label and
-            llvm_build_dir_label != cmark_build_dir_label):
+                llvm_build_dir_label == swift_stdlib_build_dir_label and
+                llvm_build_dir_label != cmark_build_dir_label):
             # cmark build type differs.
             args.build_subdir += "-" + llvm_build_dir_label
             args.build_subdir += "+cmark-" + cmark_build_dir_label
@@ -708,12 +844,32 @@ the number of parallel build jobs to use""",
 
     build_dir = os.path.join(SWIFT_BUILD_ROOT, args.build_subdir)
 
-    if args.clean:
+    if args.clean and os.path.isdir(build_dir):
         shutil.rmtree(build_dir)
 
+    host_clang = swift_build_support.clang.host_clang(
+        xcrun_toolchain=args.darwin_xcrun_toolchain)
+    if not host_clang:
+        print_with_argv0(
+            "Can't find clang.  Please install clang-3.5 or a later version.")
+        return 1
+
+    host_cmake = args.cmake
+    if not host_cmake:
+        host_cmake = swift_build_support.cmake.host_cmake(
+            args.darwin_xcrun_toolchain)
+    if not host_cmake:
+        print_with_argv0("Can't find CMake. Please install CMake.")
+        return 1
     build_script_impl_args = [
         os.path.join(SWIFT_SOURCE_ROOT, "swift", "utils", "build-script-impl"),
         "--build-dir", build_dir,
+        "--install-prefix", os.path.abspath(args.install_prefix),
+        "--host-target", args.host_target,
+        "--host-cc", host_clang.cc,
+        "--host-cxx", host_clang.cxx,
+        "--darwin-xcrun-toolchain", args.darwin_xcrun_toolchain,
+        "--cmake", host_cmake,
         "--cmark-build-type", args.cmark_build_variant,
         "--llvm-build-type", args.llvm_build_variant,
         "--swift-build-type", args.swift_build_variant,
@@ -722,6 +878,7 @@ the number of parallel build jobs to use""",
         "--llvm-enable-assertions", str(args.llvm_assertions).lower(),
         "--swift-enable-assertions", str(args.swift_assertions).lower(),
         "--swift-stdlib-enable-assertions", str(args.swift_stdlib_assertions).lower(),
+        "--swift-analyze-code-coverage", str(args.swift_analyze_code_coverage).lower(),
         "--cmake-generator", args.cmake_generator,
         "--build-jobs", str(args.build_jobs),
         "--workspace", SWIFT_SOURCE_ROOT
@@ -729,7 +886,10 @@ the number of parallel build jobs to use""",
     if args.build_foundation:
         build_script_impl_args += [
             "--foundation-build-type", args.foundation_build_variant
-        ]   
+        ]
+    if args.cmake_generator == 'Ninja' and \
+       not swift_build_support.ninja.is_ninja_installed():
+        build_script_impl_args += ["--build-ninja"]
     build_script_impl_args += build_script_impl_inferred_args
 
     # If we have extra_swift_args, combine all of them together and then add
@@ -740,10 +900,35 @@ the number of parallel build jobs to use""",
     build_script_impl_args += args.build_script_impl_args
 
     # Unset environment variables that might affect how tools behave.
-    for v in [ 'MAKEFLAGS', 'SDKROOT', 'MACOSX_DEPLOYMENT_TARGET', 'IPHONEOS_DEPLOYMENT_TARGET' ]:
+    for v in ['MAKEFLAGS', 'SDKROOT', 'MACOSX_DEPLOYMENT_TARGET', 'IPHONEOS_DEPLOYMENT_TARGET']:
         os.environ.pop(v, None)
 
+    if args.show_sdks:
+        swift_build_support.debug.print_xcodebuild_versions([
+            'iphonesimulator',
+            'appletvsimulator',
+            'watchsimulator',
+        ])
+
     check_call(build_script_impl_args)
+
+    if args.symbols_package:
+        print('--- Creating symbols package ---')
+        print('-- Package file: {} --'.format(args.symbols_package))
+
+        if platform.system() == 'Darwin':
+            prefix = swift_build_support.targets.darwin_toolchain_prefix(
+                args.install_prefix)
+        else:
+            prefix = args.install_prefix
+
+        # As a security measure, `tar` normally strips leading '/' from paths
+        # it is archiving. To stay safe, we change working directories, then
+        # run `tar` without the leading '/' (we remove it ourselves to keep
+        # `tar` from emitting a warning).
+        with WorkingDirectory(args.install_symroot):
+            swift_build_support.tar.tar(source=prefix.lstrip('/'),
+                                        destination=args.symbols_package)
 
     return 0
 
@@ -761,8 +946,8 @@ def main():
         return 1
 
     # Determine if we are invoked in the preset mode and dispatch accordingly.
-    if any([ (opt.startswith("--preset") or opt == "--show-presets")
-             for opt in sys.argv[1:] ]):
+    if any([(opt.startswith("--preset") or opt == "--show-presets")
+            for opt in sys.argv[1:]]):
         return main_preset()
     else:
         return main_normal()
@@ -770,4 +955,3 @@ def main():
 
 if __name__ == "__main__":
     sys.exit(main())
-

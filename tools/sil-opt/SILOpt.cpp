@@ -1,8 +1,8 @@
-//===-- SILOpt.cpp - SIL Optimization Driver ------------------------------===//
+//===--- SILOpt.cpp - SIL Optimization Driver -----------------------------===//
 //
 // This source file is part of the Swift.org open source project
 //
-// Copyright (c) 2014 - 2015 Apple Inc. and the Swift project authors
+// Copyright (c) 2014 - 2016 Apple Inc. and the Swift project authors
 // Licensed under Apache License v2.0 with Runtime Library Exception
 //
 // See http://swift.org/LICENSE.txt for license information
@@ -64,6 +64,12 @@ static llvm::cl::opt<std::string>
 ModuleName("module-name", llvm::cl::desc("The name of the module if processing"
                                          " a module. Necessary for processing "
                                          "stdin."));
+
+static llvm::cl::opt<bool>
+EnableResilience("enable-resilience",
+                 llvm::cl::desc("Compile the module to export resilient "
+                                "interfaces for all public declarations by "
+                                "default"));
 
 static llvm::cl::opt<std::string>
 ResourceDir("resource-dir",
@@ -198,6 +204,7 @@ int main(int argc, char **argv) {
     Invocation.setTargetTriple(Target);
   if (!ResourceDir.empty())
     Invocation.setRuntimeResourcePath(ResourceDir);
+  Invocation.getFrontendOptions().EnableResilience = EnableResilience;
   // Set the module cache path. If not passed in we use the default swift module
   // cache.
   Invocation.getClangImporterOptions().ModuleCachePath = ModuleCachePath;

@@ -1,8 +1,8 @@
-//===- DiagnosticVerifier.cpp - Diagnostic Verifier (-verify) -------------===//
+//===--- DiagnosticVerifier.cpp - Diagnostic Verifier (-verify) -----------===//
 //
 // This source file is part of the Swift.org open source project
 //
-// Copyright (c) 2014 - 2015 Apple Inc. and the Swift project authors
+// Copyright (c) 2014 - 2016 Apple Inc. and the Swift project authors
 // Licensed under Apache License v2.0 with Runtime Library Exception
 //
 // See http://swift.org/LICENSE.txt for license information
@@ -624,7 +624,7 @@ bool DiagnosticVerifier::verifyFile(unsigned BufferID,
 /// file and drop it back in place.
 void DiagnosticVerifier::autoApplyFixes(unsigned BufferID,
                                         ArrayRef<llvm::SMDiagnostic> diags) {
-  // Walk the list of diagnostics, pulling out any fixits into a array of just
+  // Walk the list of diagnostics, pulling out any fixits into an array of just
   // them.
   SmallVector<llvm::SMFixIt, 4> FixIts;
   for (auto &diag : diags)

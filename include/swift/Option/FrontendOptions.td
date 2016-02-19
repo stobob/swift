@@ -2,7 +2,7 @@
 //
 // This source file is part of the Swift.org open source project
 //
-// Copyright (c) 2014 - 2015 Apple Inc. and the Swift project authors
+// Copyright (c) 2014 - 2016 Apple Inc. and the Swift project authors
 // Licensed under Apache License v2.0 with Runtime Library Exception
 //
 // See http://swift.org/LICENSE.txt for license information
@@ -27,6 +27,11 @@ def delayed_function_body_parsing :
 
 def primary_file : Separate<["-"], "primary-file">,
   HelpText<"Produce output for this file, not the whole module">;
+
+def filelist : Separate<["-"], "filelist">,
+  HelpText<"Specify source inputs in a file rather than on the command line">;
+def output_filelist : Separate<["-"], "output-filelist">,
+  HelpText<"Specify outputs in a file rather than on the command line">;
 
 def emit_module_doc : Flag<["-"], "emit-module-doc">,
   HelpText<"Emit a module documentation file based on documentation "
@@ -144,6 +149,9 @@ def debugger_support : Flag<["-"], "debugger-support">,
 def disable_arc_opts : Flag<["-"], "disable-arc-opts">,
   HelpText<"Don't run SIL ARC optimization passes.">;
 
+def enable_guaranteed_closure_contexts : Flag<["-"], "enable-guaranteed-closure-contexts">,
+  HelpText<"Use @guaranteed convention for closure context">;
+
 def remove_runtime_asserts : Flag<["-"], "remove-runtime-asserts">,
 HelpText<"Remove runtime asserts.">;
 
@@ -173,6 +181,22 @@ def disable_llvm_slp_vectorizer : Flag<["-"], "disable-llvm-slp-vectorizer">,
 def disable_llvm_verify : Flag<["-"], "disable-llvm-verify">,
   HelpText<"Don't run the LLVM IR verifier.">;
 
+def disable_llvm_value_names : Flag<["-"], "disable-llvm-value-names">,
+  HelpText<"Don't add names to local values in LLVM IR">;
+
+def enable_llvm_value_names : Flag<["-"], "enable-llvm-value-names">,
+  HelpText<"Add names to local values in LLVM IR">;
+
+def enable_reflection_metadata : Flag<["-"], "enable-reflection-metadata">,
+  HelpText<"Enable emission of reflection metadata for nominal types">;
+
+def strip_reflection_metadata : Flag<["-"], "strip-reflection-metadata">,
+  HelpText<"Strip all reflection metadata for nominal types">;
+
+def strip_reflection_names : Flag<["-"], "strip-reflection-names">,
+  HelpText<"Strip names of stored properties and enum cases from"
+           "reflection metadata">;
+
 def stack_promotion_checks : Flag<["-"], "emit-stack-promotion-checks">,
   HelpText<"Emit runtime checks for correct stack promotion of objects.">;
 
@@ -189,12 +213,6 @@ def dump_clang_diagnostics : Flag<["-"], "dump-clang-diagnostics">,
 def emit_verbose_sil : Flag<["-"], "emit-verbose-sil">,
   HelpText<"Emit locations during SIL emission">;
 
-def use_native_super_method : Flag<["-"], "use-native-super-method">,
-  HelpText<"Use super_method for super calls in native classes">;
-
-def disable_self_type_mangling : Flag<["-"], "disable-self-type-mangling">,
-  HelpText<"Disable including Self type in method type manglings">;
-
 def enable_experimental_patterns : Flag<["-"], "enable-experimental-patterns">,
   HelpText<"Enable experimental 'switch' pattern matching features">;
 
@@ -206,6 +224,10 @@ def enable_omit_needless_words :
   Flag<["-"], "enable-omit-needless-words">,
   HelpText<"Omit needless words when importing Objective-C names">;
 
+def enable_strip_ns_prefix :
+  Flag<["-"], "enable-strip-ns-prefix">,
+  HelpText<"Strip 'NS' prefix from Foundation entities">;
+
 def enable_infer_default_arguments :
   Flag<["-"], "enable-infer-default-arguments">,
   HelpText<"Infer default arguments for imported parameters">;
@@ -213,6 +235,10 @@ def enable_infer_default_arguments :
 def enable_swift_name_lookup_tables :
   Flag<["-"], "enable-swift-name-lookup-tables">,
   HelpText<"Enable Swift name lookup tables in the Clang importer">;
+
+def swift3_migration :
+  Flag<["-"], "swift3-migration">,
+  HelpText<"Enable Fix-It based migration aids for Swift 3">;
 
 def warn_omit_needless_words :
   Flag<["-"], "Womit-needless-words">,
@@ -263,6 +289,9 @@ def print_inst_counts : Flag<["-"], "print-inst-counts">,
   HelpText<"Before IRGen, count all the various SIL instructions. Must be used "
            "in conjunction with -print-stats.">;
 
+def print_llvm_inline_tree : Flag<["-"], "print-llvm-inline-tree">,
+  HelpText<"Print the LLVM inline tree.">;
+
 def emit_sorted_sil : Flag<["-"], "emit-sorted-sil">,
   HelpText<"When printing SIL, print out all sil entities sorted by name to "
            "ease diffing">;
@@ -289,9 +318,7 @@ def dump_api_path : Separate<["-"], "dump-api-path">,
   HelpText<"The path to output swift interface files for the compiled source files">;
 
 def enable_resilience : Flag<["-"], "enable-resilience">,
-   HelpText<"Treat all types as resilient by default">;
-
-def disable_resilience : Flag<["-"], "disable-resilience">,
-   HelpText<"Treat all types as fixed layout by default">;
+   HelpText<"Compile the module to export resilient interfaces for all "
+            "public declarations by default">;
 
 } // end let Flags = [FrontendOption, NoDriverOption, HelpHidden]

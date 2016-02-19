@@ -1,4 +1,13 @@
 #!/usr/bin/env python
+# cmpcodesize/main.py - Command-line entry point for cmpcodesize -*- python -*-
+#
+# This source file is part of the Swift.org open source project
+#
+# Copyright (c) 2014 - 2016 Apple Inc. and the Swift project authors
+# Licensed under Apache License v2.0 with Runtime Library Exception
+#
+# See http://swift.org/LICENSE.txt for license information
+# See http://swift.org/CONTRIBUTORS.txt for the list of Swift project authors
 
 from __future__ import print_function
 
@@ -13,9 +22,9 @@ from cmpcodesize.compare import \
 
 
 SHORTCUTS = {
-    "O": "bin/PerfTests_O",
-    "Ounchecked": "bin/PerfTests_Ounchecked",
-    "Onone": "bin/PerfTests_Onone",
+    "O": "bin/Benchmark_O",
+    "Ounchecked": "bin/Benchmark_Ounchecked",
+    "Onone": "bin/Benchmark_Onone",
     "dylib": "lib/swift/macosx/x86_64/libswiftCore.dylib",
 }
 
@@ -34,16 +43,16 @@ E.g. $HOME/swift-reference/build/Ninja-ReleaseAssert+stdlib-Release/swift-macosx
 
 How to specify files:
 1) No files:
-    Compares codesize of the PerfTests_* executables and the swiftCore dylib in the new and old build-dirs.
+    Compares codesize of the Benchmark_* executables and the swiftCore dylib in the new and old build-dirs.
     Example:
         cmpcodesize
 
 2) One or more paths relative to the build-dirs (can be a pattern):
     Compares the files in the new and old build-dirs.
     Aliases:
-        O          => bin/PerfTests_O
-        Ounchecked => bin/PerfTests_Ounchecked
-        Onone      => bin/PerfTests_Onone
+        O          => bin/Benchmark_O
+        Ounchecked => bin/Benchmark_Ounchecked
+        Onone      => bin/Benchmark_Onone
         dylib      => lib/swift/macosx/x86_64/libswiftCore.dylib
     Examples:
         cmpcodesize Onone
@@ -92,7 +101,7 @@ How to specify files:
                         default=False)
 
     # Positional arguments.
-    # These can be specififed in means beyond what argparse supports,
+    # These can be specified in means beyond what argparse supports,
     # so we gather them in a list and parse them manually.
     parser.add_argument('files', nargs='*',
                         help='A list of old and new files.')

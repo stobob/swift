@@ -15,7 +15,7 @@ init() {}
 
 /// Aaa.  subscript(i: Int).
 subscript(i: Int) -> Int {
-// CHECK: {{.*}}DocCommentAsXML=[<Other file="{{.*}}" line="{{.*}}" column="{{.*}}"><Name>subscript(_:)</Name><USR>s:iC14swift_ide_test21A010_AttachToEntities9subscriptFSiSi</USR><Declaration>subscript (i: Int) -&gt; Int { get set }</Declaration><Abstract><Para>Aaa.  subscript(i: Int).</Para></Abstract></Other>]
+// CHECK: {{.*}}DocCommentAsXML=[<Other file="{{.*}}" line="{{.*}}" column="{{.*}}"><Name>subscript(_:)</Name><USR>s:iC14swift_ide_test21A010_AttachToEntities9subscriptFSiSi</USR><Declaration>subscript(i: Int) -&gt; Int { get set }</Declaration><Abstract><Para>Aaa.  subscript(i: Int).</Para></Abstract></Other>]
     get {
 // CHECK: {{.*}}DocCommentAsXML=none
       return 0
@@ -411,8 +411,8 @@ func f0(x: Int, y: Int, z: Int) {}
 /// ```
 /// thisIsASwiftCodeExample()
 /// ```
-func codeListingWithDefaultLangauge() {}
-// CHECK: DocCommentAsXML=[<Function file="{{.*}} line="{{.*}}" column="{{.*}}"><Name>codeListingWithDefaultLangauge()</Name><USR>s:F14swift_ide_test30codeListingWithDefaultLangaugeFT_T_</USR><Declaration>func codeListingWithDefaultLangauge()</Declaration><Abstract><Para>Brief.</Para></Abstract><Discussion><CodeListing language="swift"><zCodeLineNumbered><![CDATA[thisIsASwiftCodeExample()]]></zCodeLineNumbered><zCodeLineNumbered></zCodeLineNumbered></CodeListing></Discussion></Function>] CommentXMLValid
+func codeListingWithDefaultLanguage() {}
+// CHECK: DocCommentAsXML=[<Function file="{{.*}} line="{{.*}}" column="{{.*}}"><Name>codeListingWithDefaultLanguage()</Name><USR>s:F14swift_ide_test30codeListingWithDefaultLanguageFT_T_</USR><Declaration>func codeListingWithDefaultLanguage()</Declaration><Abstract><Para>Brief.</Para></Abstract><Discussion><CodeListing language="swift"><zCodeLineNumbered><![CDATA[thisIsASwiftCodeExample()]]></zCodeLineNumbered><zCodeLineNumbered></zCodeLineNumbered></CodeListing></Discussion></Function>] CommentXMLValid
 
 
 /// Brief.

@@ -1,8 +1,8 @@
-//===-- PrintAsObjC.cpp - Emit a header file for a Swift AST --------------===//
+//===--- PrintAsObjC.cpp - Emit a header file for a Swift AST -------------===//
 //
 // This source file is part of the Swift.org open source project
 //
-// Copyright (c) 2014 - 2015 Apple Inc. and the Swift project authors
+// Copyright (c) 2014 - 2016 Apple Inc. and the Swift project authors
 // Licensed under Apache License v2.0 with Runtime Library Exception
 //
 // See http://swift.org/LICENSE.txt for license information
@@ -37,7 +37,8 @@ using namespace swift;
 
 static bool isNSObject(ASTContext &ctx, Type type) {
   if (auto classDecl = type->getClassOrBoundGenericClass()) {
-    return classDecl->getName() == ctx.Id_NSObject &&
+    return classDecl->getName()
+             == ctx.getSwiftId(KnownFoundationEntity::NSObject) &&
            classDecl->getModuleContext()->getName() == ctx.Id_ObjectiveC;
   }
 
@@ -71,17 +72,18 @@ namespace {
   };
 }
 
-static Identifier getNameForObjC(const NominalTypeDecl *NTD,
+static Identifier getNameForObjC(const ValueDecl *VD,
                                  CustomNamesOnly_t customNamesOnly = Normal) {
-  assert(isa<ClassDecl>(NTD) || isa<ProtocolDecl>(NTD) || isa<EnumDecl>(NTD));
-  if (auto objc = NTD->getAttrs().getAttribute<ObjCAttr>()) {
+  assert(isa<ClassDecl>(VD) || isa<ProtocolDecl>(VD)
+      || isa<EnumDecl>(VD) || isa<EnumElementDecl>(VD));
+  if (auto objc = VD->getAttrs().getAttribute<ObjCAttr>()) {
     if (auto name = objc->getName()) {
       assert(name->getNumSelectorPieces() == 1);
       return name->getSelectorPieces().front();
     }
   }
 
-  return customNamesOnly ? Identifier() : NTD->getName();
+  return customNamesOnly ? Identifier() : VD->getName();
 }
 
 
@@ -255,12 +257,18 @@ private:
       // Print the cases as the concatenation of the enum name with the case
       // name.
       os << "  ";
-      if (customName.empty()) {
-        os << ED->getName();
+      Identifier customEltName = getNameForObjC(Elt, CustomNamesOnly);
+      if (customEltName.empty()) {
+        if (customName.empty()) {
+          os << ED->getName();
+        } else {
+          os << customName;
+        }
+        os << Elt->getName();
       } else {
-        os << customName;
+        os << customEltName
+           << " SWIFT_COMPILE_NAME(\"" << Elt->getName() << "\")";
       }
-      os << Elt->getName();
       
       if (auto ILE = cast_or_null<IntegerLiteralExpr>(Elt->getRawValueExpr())) {
         os << " = ";
@@ -274,7 +282,7 @@ private:
   }
 
   void printSingleMethodParam(StringRef selectorPiece,
-                              const Pattern *param,
+                              const ParamDecl *param,
                               const clang::ParmVarDecl *clangParam,
                               bool isNSUIntegerSubscript,
                               bool isLastPiece) {
@@ -283,14 +291,14 @@ private:
         (clangParam && isNSUInteger(clangParam->getType()))) {
       os << "NSUInteger";
     } else {
-      this->print(param->getType(), OTK_None);
+      print(param->getType(), OTK_None);
     }
     os << ")";
 
-    if (isa<AnyPattern>(param)) {
+    if (!param->hasName()) {
       os << "_";
     } else {
-      Identifier name = cast<NamedPattern>(param)->getBodyName();
+      Identifier name = param->getName();
       os << name;
       if (isClangKeyword(name))
         os << "_";
@@ -394,17 +402,13 @@ private:
 
     os << ")";
 
-    auto bodyPatterns = AFD->getBodyParamPatterns();
-    assert(bodyPatterns.size() == 2 && "not an ObjC-compatible method");
+    auto paramLists = AFD->getParameterLists();
+    assert(paramLists.size() == 2 && "not an ObjC-compatible method");
 
-    llvm::SmallString<128> selectorBuf;
     ArrayRef<Identifier> selectorPieces
       = AFD->getObjCSelector().getSelectorPieces();
-    const TuplePattern *paramTuple
-      = dyn_cast<TuplePattern>(bodyPatterns.back());
-    const ParenPattern *paramParen
-      = dyn_cast<ParenPattern>(bodyPatterns.back());
-    assert((paramTuple || paramParen) && "Bad body parameters?");
+    
+    const auto &params = paramLists[1]->getArray();
     unsigned paramIndex = 0;
     for (unsigned i = 0, n = selectorPieces.size(); i != n; ++i) {
       if (i > 0) os << ' ';
@@ -429,37 +433,21 @@ private:
         continue;
       }
 
-      // Single-parameter methods.
-      if (paramParen) {
-        assert(paramIndex == 0);
-        auto clangParam = clangMethod ? clangMethod->parameters()[0] : nullptr;
-        printSingleMethodParam(piece,
-                               paramParen->getSemanticsProvidingPattern(),
-                               clangParam,
-                               isNSUIntegerSubscript,
-                               i == n-1);
-        paramIndex = 1;
-        continue;
-      }
-
       // Zero-parameter methods.
-      if (paramTuple->getNumElements() == 0) {
+      if (params.size() == 0) {
         assert(paramIndex == 0);
         os << piece;
         paramIndex = 1;
         continue;
       }
 
-      // Multi-parameter methods.
       const clang::ParmVarDecl *clangParam = nullptr;
       if (clangMethod)
         clangParam = clangMethod->parameters()[paramIndex];
 
-      const TuplePatternElt &param = paramTuple->getElements()[paramIndex];
-      auto pattern = param.getPattern()->getSemanticsProvidingPattern();
-      printSingleMethodParam(piece, pattern, clangParam,
-                             isNSUIntegerSubscript,
-                             i == n-1);
+      // Single-parameter methods.
+      printSingleMethodParam(piece, params[paramIndex], clangParam,
+                             isNSUIntegerSubscript, i == n-1);
       ++paramIndex;
     }
 
@@ -768,7 +756,9 @@ private:
         = { "BOOL", false};
       specialNames[{ID_ObjectiveC, ctx.getIdentifier("Selector")}] 
         = { "SEL", true };
-      specialNames[{ID_ObjectiveC, ctx.getIdentifier("NSZone")}] 
+      specialNames[{ID_ObjectiveC,
+                    ctx.getIdentifier(
+                      ctx.getSwiftName(KnownFoundationEntity::NSZone))}]
         = { "struct _NSZone *", true };
 
       specialNames[{ctx.Id_Darwin, ctx.getIdentifier("DarwinBoolean")}]
@@ -1010,7 +1000,7 @@ private:
   void visitEnumType(EnumType *ET, Optional<OptionalTypeKind> optionalKind) {
     const EnumDecl *ED = ET->getDecl();
     maybePrintTagKeyword(ED);
-    os << ED->getName();
+    os << getNameForObjC(ED);
   }
 
   void visitClassType(ClassType *CT, Optional<OptionalTypeKind> optionalKind) {
@@ -1405,7 +1395,7 @@ public:
     assert(ED->isObjC() || ED->hasClangNode());
     
     forwardDeclare(ED, [&]{
-      os << "enum " << ED->getName() << " : ";
+      os << "enum " << getNameForObjC(ED) << " : ";
       printer.print(ED->getRawType(), OTK_None);
       os << ";\n";
     });
@@ -1555,7 +1545,7 @@ public:
         return elem->getName().str() == "Domain";
       });
       if (!hasDomainCase) {
-        os << "static NSString * _Nonnull const " << ED->getName()
+        os << "static NSString * _Nonnull const " << getNameForObjC(ED)
            << "Domain = @\"" << M.getName() << "." << ED->getName() << "\";\n";
       }
     }

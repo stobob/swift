@@ -1,8 +1,8 @@
-//===--- ClangImporter.h - Import Clang Modules ----------------*- C++ -*--===//
+//===--- ClangImporter.h - Import Clang Modules -----------------*- C++ -*-===//
 //
 // This source file is part of the Swift.org open source project
 //
-// Copyright (c) 2014 - 2015 Apple Inc. and the Swift project authors
+// Copyright (c) 2014 - 2016 Apple Inc. and the Swift project authors
 // Licensed under Apache License v2.0 with Runtime Library Exception
 //
 // See http://swift.org/LICENSE.txt for license information
@@ -231,7 +231,7 @@ public:
   /// Otherwise, return nullptr.
   Decl *importDeclCached(const clang::NamedDecl *ClangDecl);
 
-  /// Returns true if it is expected that the macro is ignored.
+  // Returns true if it is expected that the macro is ignored.
   bool shouldIgnoreMacro(StringRef Name, const clang::MacroInfo *Macro);
 
   /// Returns the name of the given enum element as it would be imported into
@@ -255,12 +255,11 @@ public:
   /// Dump Swift lookup tables.
   void dumpSwiftLookupTables();
   
-  /// Given the path of a Clang module, collect the names of all its submodules
-  /// and their corresponding visibility. Calling this function does not load the
-  /// module.
-  void collectSubModuleNamesAndVisibility(
+  /// Given the path of a Clang module, collect the names of all its submodules.
+  /// Calling this function does not load the module.
+  void collectSubModuleNames(
       ArrayRef<std::pair<Identifier, SourceLoc>> path,
-      std::vector<std::pair<std::string, bool>> &namesVisiblePairs);
+      std::vector<std::string> &names);
 
   /// Given a Clang module, decide whether this module is imported already.
   static bool isModuleImported(const clang::Module *M);

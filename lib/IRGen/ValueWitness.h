@@ -2,7 +2,7 @@
 //
 // This source file is part of the Swift.org open source project
 //
-// Copyright (c) 2014 - 2015 Apple Inc. and the Swift project authors
+// Copyright (c) 2014 - 2016 Apple Inc. and the Swift project authors
 // Licensed under Apache License v2.0 with Runtime Library Exception
 //
 // See http://swift.org/LICENSE.txt for license information
@@ -162,7 +162,7 @@ enum class ValueWitness : unsigned {
   
   ///   void (*destroyArray)(T *object, size_t n, witness_t *self);
   ///
-  /// Given a vaild array of n objects of this type, destroy the object, leaving
+  /// Given a valid array of n objects of this type, destroy the object, leaving
   /// the array invalid. This is useful when generically destroying an array of
   /// objects to avoid calling the scalar 'destroy' witness in a loop.
   DestroyArray,
@@ -282,17 +282,19 @@ enum class ValueWitness : unsigned {
   /// type is an enum.
   First_EnumValueWitness,
 
-  ///   unsigned (*getEnumTag)(T *obj, M *self);
+  ///   int (*getEnumTag)(T *obj, M *self);
   /// Given a valid object of this enum type, extracts the tag value indicating
-  /// which case of the enum is inhabited.
+  /// which case of the enum is inhabited. Returned values are in the range
+  /// [-ElementsWithPayload..ElementsWithNoPayload-1].
   GetEnumTag = First_EnumValueWitness,
   ///   void (*destructiveProjectEnumData)(T *obj, M *self);
   /// Given a valid object of this enum type, destructively extracts the
   /// associated payload.
   DestructiveProjectEnumData,
-  ///   void (*destructiveInjectEnumTag)(T *obj, unsigned tag, M *self);
+  ///   void (*destructiveInjectEnumTag)(T *obj, int tag, M *self);
   /// Given an enum case tag and a valid object of case's payload type,
-  /// destructively inserts the tag into the payload.
+  /// destructively inserts the tag into the payload. The given tag value
+  /// must be in the range [-ElementsWithPayload..ElementsWithNoPayload-1].
   DestructiveInjectEnumTag,
 
   Last_EnumValueWitness = DestructiveInjectEnumTag,

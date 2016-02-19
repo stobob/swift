@@ -2,7 +2,7 @@
 //
 // This source file is part of the Swift.org open source project
 //
-// Copyright (c) 2014 - 2015 Apple Inc. and the Swift project authors
+// Copyright (c) 2014 - 2016 Apple Inc. and the Swift project authors
 // Licensed under Apache License v2.0 with Runtime Library Exception
 //
 // See http://swift.org/LICENSE.txt for license information
@@ -1051,6 +1051,7 @@ static Accessibility inferAccessibility(const ValueDecl *D) {
   case DeclContextKind::Initializer:
   case DeclContextKind::TopLevelCodeDecl:
   case DeclContextKind::AbstractFunctionDecl:
+  case DeclContextKind::SubscriptDecl:
     return Accessibility::Private;
   case DeclContextKind::Module:
   case DeclContextKind::FileUnit:
@@ -1478,6 +1479,11 @@ static SourceLoc getVarDeclInitEnd(VarDecl *VD) {
              SourceLoc();
 }
 
+struct SiblingAlignInfo {
+  SourceLoc Loc;
+  bool ExtraIndent;
+};
+
 class FormatContext
 {
   SourceManager &SM;
@@ -1487,7 +1493,7 @@ class FormatContext
   swift::ASTWalker::ParentTy End;
   bool InDocCommentBlock;
   bool InCommentLine;
-  SourceLoc SiblingLoc;
+  SiblingAlignInfo SiblingInfo;
 
 public:
   FormatContext(SourceManager &SM,
@@ -1496,10 +1502,10 @@ public:
                 swift::ASTWalker::ParentTy End = swift::ASTWalker::ParentTy(),
                 bool InDocCommentBlock = false,
                 bool InCommentLine = false,
-                SourceLoc SiblingLoc = SourceLoc())
+                SiblingAlignInfo SiblingInfo = SiblingAlignInfo())
     :SM(SM), Stack(Stack), Cursor(Stack.rbegin()), Start(Start), End(End),
      InDocCommentBlock(InDocCommentBlock), InCommentLine(InCommentLine),
-     SiblingLoc(SiblingLoc) { }
+     SiblingInfo(SiblingInfo) { }
 
   FormatContext parent() {
     assert(Cursor != Stack.rend());
@@ -1517,16 +1523,20 @@ public:
   }
 
   void padToSiblingColumn(StringBuilder &Builder) {
-    assert(SiblingLoc.isValid() && "No sibling to align with.");
-    CharSourceRange Range(SM, Lexer::getLocForStartOfLine(SM, SiblingLoc),
-                          SiblingLoc);
+    assert(SiblingInfo.Loc.isValid() && "No sibling to align with.");
+    CharSourceRange Range(SM, Lexer::getLocForStartOfLine(SM, SiblingInfo.Loc),
+                          SiblingInfo.Loc);
     for (auto C : Range.str()) {
       Builder.append(1, C == '\t' ? C : ' ');
     }
   }
 
   bool HasSibling() {
-    return SiblingLoc.isValid();
+    return SiblingInfo.Loc.isValid();
+  }
+
+  bool needExtraIndentationForSibling() {
+    return SiblingInfo.ExtraIndent;
   }
 
   std::pair<unsigned, unsigned> lineAndColumn() {
@@ -1641,7 +1651,8 @@ public:
         // }
         if (auto VD = dyn_cast_or_null<VarDecl>(Cursor->getAsDecl())) {
           if (auto Getter = VD->getGetter()) {
-            if (Getter->getAccessorKeywordLoc().isInvalid()) {
+            if (!Getter->isImplicit() &&
+                Getter->getAccessorKeywordLoc().isInvalid()) {
               LineAndColumn = ParentLineAndColumn;
               continue;
             }
@@ -1783,7 +1794,7 @@ public:
         SM.getLineAndColumn(If->getElseLoc()).first == Line)
       return false;
 
-    // If we're in an DoCatchStmt and at a 'catch', don't add an indent.
+    // If we're in a DoCatchStmt and at a 'catch', don't add an indent.
     if (auto *DoCatchS = dyn_cast_or_null<DoCatchStmt>(Cursor->getAsStmt())) {
       for (CatchStmt *CatchS : DoCatchS->getCatches()) {
         SourceLoc Loc = CatchS->getCatchLoc();
@@ -1828,6 +1839,7 @@ public:
   }
 };
 
+
 class FormatWalker: public ide::SourceEntityWalker {
   typedef std::vector<Token>::iterator TokenIt;
   class SiblingCollector {
@@ -1836,16 +1848,43 @@ class FormatWalker: public ide::SourceEntityWalker {
     std::vector<Token> &Tokens;
     SourceLoc &TargetLoc;
     TokenIt TI;
+    bool NeedExtraIndentation;
 
-    bool isImmediateAfterSeparator(SourceLoc End, tok Seperator) {
-      auto BeforeE = [&]() {
-        return TI != Tokens.end() &&
-               !SM.isBeforeInBuffer(End, TI->getLoc());
-      };
-      if (!BeforeE())
-        return false;
-      for (; BeforeE(); TI ++);
-      if (TI == Tokens.end() || TI->getKind() != Seperator)
+    class SourceLocIterator : public std::iterator<std::input_iterator_tag,
+                                                   SourceLoc>
+    {
+      TokenIt It;
+    public:
+      SourceLocIterator(TokenIt It) :It(It) {}
+      SourceLocIterator(const SourceLocIterator& mit) : It(mit.It) {}
+      SourceLocIterator& operator++() {++It; return *this;}
+      SourceLocIterator operator++(int) {
+        SourceLocIterator tmp(*this);
+        operator++();
+        return tmp;
+      }
+      bool operator==(const SourceLocIterator& rhs) {return It==rhs.It;}
+      bool operator!=(const SourceLocIterator& rhs) {return It!=rhs.It;}
+      SourceLoc operator*() {return It->getLoc();}
+    };
+
+    void adjustTokenIteratorToImmediateAfter(SourceLoc End) {
+      SourceLocIterator LocBegin(Tokens.begin());
+      SourceLocIterator LocEnd(Tokens.end());
+      auto Lower = std::lower_bound(LocBegin, LocEnd, End,
+                                    [&](SourceLoc L, SourceLoc R) {
+        return SM.isBeforeInBuffer(L, R);
+      });
+      if (*Lower == End) {
+        Lower ++;
+      }
+      TI = Tokens.begin();
+      std::advance(TI, std::distance(LocBegin, Lower));
+    }
+
+    bool isImmediateAfterSeparator(SourceLoc End, tok Separator) {
+      adjustTokenIteratorToImmediateAfter(End);
+      if (TI == Tokens.end() || TI->getKind() != Separator)
         return false;
       auto SeparatorLoc = TI->getLoc();
       TI ++;
@@ -1856,10 +1895,24 @@ class FormatWalker: public ide::SourceEntityWalker {
             !SM.isBeforeInBuffer(NextLoc, TargetLoc);
     }
 
+    bool isTargetImmediateAfter(SourceLoc Loc) {
+      adjustTokenIteratorToImmediateAfter(Loc);
+      // Make sure target loc is after loc
+      return SM.isBeforeInBuffer(Loc, TargetLoc) &&
+      // Make sure immediate loc after loc is not before target loc.
+             !SM.isBeforeInBuffer(TI->getLoc(), TargetLoc);
+    }
+
+    bool sameLineWithTarget(SourceLoc Loc) {
+      return SM.getLineNumber(Loc) == SM.getLineNumber(TargetLoc);
+    }
+
   public:
     SiblingCollector(SourceManager &SM, std::vector<Token> &Tokens,
                      SourceLoc &TargetLoc) : SM(SM), Tokens(Tokens),
-                      TargetLoc(TargetLoc), TI(Tokens.begin()) {}
+                      TargetLoc(TargetLoc), TI(Tokens.begin()),
+                      NeedExtraIndentation(false) {}
+
     void collect(ASTNode Node) {
       if (FoundSibling.isValid())
         return;
@@ -1893,8 +1946,11 @@ class FormatWalker: public ide::SourceEntityWalker {
         // Trailing closures are not considered siblings to other args.
         unsigned EndAdjust = TE->hasTrailingClosure() ? 1 : 0;
         for (unsigned I = 0, N = TE->getNumElements() - EndAdjust; I < N; I ++) {
-          addPair(TE->getElement(I)->getEndLoc(),
-                  FindAlignLoc(TE->getElement(I)->getStartLoc()), tok::comma);
+          auto EleStart = TE->getElementNameLoc(I);
+          if (EleStart.isInvalid()) {
+            EleStart = TE->getElement(I)->getStartLoc();
+          }
+          addPair(TE->getElement(I)->getEndLoc(), FindAlignLoc(EleStart), tok::comma);
         }
       }
 
@@ -1910,27 +1966,39 @@ class FormatWalker: public ide::SourceEntityWalker {
         }
 
         // Function parameters are siblings.
-        for (auto P : AFD->getBodyParamPatterns()) {
-          if (auto TU = dyn_cast<TuplePattern>(P)) {
-            for (unsigned I = 0, N = TU->getNumElements(); I < N; I ++) {
-              addPair(TU->getElement(I).getPattern()->getEndLoc(),
-                      FindAlignLoc(TU->getElement(I).getLabelLoc()), tok::comma);
-            }
+        for (auto P : AFD->getParameterLists()) {
+          for (auto param : *P) {
+           if (!param->isSelfParameter())
+              addPair(param->getEndLoc(), FindAlignLoc(param->getStartLoc()),
+                      tok::comma);
           }
         }
       }
 
       // Array/Dictionary elements are siblings to align with each other.
       if (auto AE = dyn_cast_or_null<CollectionExpr>(Node.dyn_cast<Expr *>())) {
+        SourceLoc LBracketLoc = AE->getLBracketLoc();
+        if (isTargetImmediateAfter(LBracketLoc) &&
+            !sameLineWithTarget(LBracketLoc)) {
+          FoundSibling = LBracketLoc;
+          NeedExtraIndentation = true;
+        }
         for (unsigned I = 0, N = AE->getNumElements(); I < N;  I ++) {
           addPair(AE->getElement(I)->getEndLoc(),
                   FindAlignLoc(AE->getElement(I)->getStartLoc()), tok::comma);
         }
       }
+
+      // Case label items in a case statement are siblings.
+      if (auto CS = dyn_cast_or_null<CaseStmt>(Node.dyn_cast<Stmt *>())) {
+        for(const CaseLabelItem& Item : CS->getCaseLabelItems()) {
+          addPair(Item.getEndLoc(), FindAlignLoc(Item.getStartLoc()), tok::comma);
+        }
+      }
     };
 
-    SourceLoc findSibling() {
-      return FoundSibling;
+    SiblingAlignInfo getSiblingInfo() {
+      return {FoundSibling, NeedExtraIndentation};
     }
   };
 
@@ -2033,7 +2101,7 @@ public:
     walk(SF);
     scanForComments(SourceLoc());
     return FormatContext(SM, Stack, AtStart, AtEnd, InDocCommentBlock,
-                         InCommentLine, SCollector.findSibling());
+                         InCommentLine, SCollector.getSiblingInfo());
   }
 
   bool walkToDeclPre(Decl *D, CharSourceRange Range) override {
@@ -2090,6 +2158,12 @@ public:
       StringRef Line = Doc.getTrimmedTextForLine(LineIndex);
       StringBuilder Builder;
       FC.padToSiblingColumn(Builder);
+      if (FC.needExtraIndentationForSibling()) {
+        if (FmtOptions.UseTabs)
+          Builder.append(1, '\t');
+        else
+          Builder.append(FmtOptions.IndentWidth, ' ');
+      }
       Builder.append(Line);
       Consumer.recordFormattedText(Builder.str().str());
       return SwiftEditorLineRange(LineIndex, 1);
@@ -2437,7 +2511,7 @@ ImmutableTextSnapshotRef SwiftEditorDocument::replaceText(
 }
 
 void SwiftEditorDocument::updateSemaInfo() {
-  if (auto SemaInfo = Impl.SemanticInfo) {
+  if (Impl.SemanticInfo) {
     Impl.SemanticInfo->processLatestSnapshotAsync(Impl.EditableBuffer);
   }
 }
@@ -2807,9 +2881,9 @@ void SwiftEditorDocument::reportDocumentStructure(swift::SourceFile &SrcFile,
   ModelContext.walk(Walker);
 }
 
-//============================================================================//
+//===----------------------------------------------------------------------===//
 // EditorOpen
-//============================================================================//
+//===----------------------------------------------------------------------===//
 
 void SwiftLangSupport::editorOpen(StringRef Name, llvm::MemoryBuffer *Buf,
                                   bool EnableSyntaxMap,
@@ -2825,7 +2899,7 @@ void SwiftLangSupport::editorOpen(StringRef Name, llvm::MemoryBuffer *Buf,
     EditorDoc->parse(Snapshot, *this);
     if (EditorDocuments.getOrUpdate(Name, *this, EditorDoc)) {
       // Document already exists, re-initialize it. This should only happen
-      // if we get OPEN request while the prevous document is not closed.
+      // if we get OPEN request while the previous document is not closed.
       LOG_WARN_FUNC("Document already exists in editorOpen(..): " << Name);
       Snapshot = nullptr;
     }
@@ -2845,9 +2919,9 @@ void SwiftLangSupport::editorOpen(StringRef Name, llvm::MemoryBuffer *Buf,
 }
 
 
-//============================================================================//
+//===----------------------------------------------------------------------===//
 // EditorClose
-//============================================================================//
+//===----------------------------------------------------------------------===//
 
 void SwiftLangSupport::editorClose(StringRef Name, bool RemoveCache) {
   auto Removed = EditorDocuments.remove(Name);
@@ -2859,9 +2933,9 @@ void SwiftLangSupport::editorClose(StringRef Name, bool RemoveCache) {
 }
 
 
-//============================================================================//
+//===----------------------------------------------------------------------===//
 // EditorReplaceText
-//============================================================================//
+//===----------------------------------------------------------------------===//
 
 void SwiftLangSupport::editorReplaceText(StringRef Name, llvm::MemoryBuffer *Buf,
                                          unsigned Offset, unsigned Length,
@@ -2887,9 +2961,9 @@ void SwiftLangSupport::editorReplaceText(StringRef Name, llvm::MemoryBuffer *Buf
 }
 
 
-//============================================================================//
+//===----------------------------------------------------------------------===//
 // EditorFormatText
-//============================================================================//
+//===----------------------------------------------------------------------===//
 void SwiftLangSupport::editorApplyFormatOptions(StringRef Name,
                                                 OptionsDictionary &FmtOptions) {
   auto EditorDoc = EditorDocuments.getByUnresolvedName(Name);
@@ -2914,9 +2988,9 @@ void SwiftLangSupport::editorExtractTextFromComment(StringRef Source,
   Consumer.handleSourceText(extractPlainTextFromComment(Source));
 }
 
-//============================================================================//
+//===----------------------------------------------------------------------===//
 // EditorExpandPlaceholder
-//============================================================================//
+//===----------------------------------------------------------------------===//
 void SwiftLangSupport::editorExpandPlaceholder(StringRef Name, unsigned Offset,
                                                unsigned Length,
                                                EditorConsumer &Consumer) {

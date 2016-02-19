@@ -6,6 +6,15 @@
 
 import SwiftPrivate
 import StdlibUnittest
+
+// Also import modules which are used by StdlibUnittest internally. This
+// workaround is needed to link all required libraries in case we compile
+// StdlibUnittest with -sil-serialize-all.
+import SwiftPrivate
+#if _runtime(_ObjC)
+import ObjectiveC
+#endif
+
 import Foundation
 
 var UTF16APIs = TestSuite("UTF16APIs")
@@ -195,7 +204,7 @@ struct UTF8Test {
 
   init(
     _ scalars: [UInt32], _ encoded: [UInt8],
-    file: String = __FILE__, line: UInt = __LINE__
+    file: String = #file, line: UInt = #line
   ) {
     self.scalars = scalars
     self.encoded = encoded
@@ -404,7 +413,7 @@ struct UTF16Test {
   init(
     _ scalarsHead: [UInt32], _ scalarsRepairedTail: [UInt32],
     _ encoded: [UInt16],
-    file: String = __FILE__, line: UInt = __LINE__
+    file: String = #file, line: UInt = #line
   ) {
     self.scalarsHead = scalarsHead
     self.scalarsRepairedTail = scalarsRepairedTail

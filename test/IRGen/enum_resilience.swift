@@ -57,7 +57,7 @@ enum InternalEither {
   case Right(ReferenceFast)
 }
 
-// CHECK-LABEL: define void @_TF15enum_resilience25functionWithResilientEnumFO14resilient_enum6MediumS1_(%swift.opaque* noalias nocapture sret, %swift.opaque* noalias nocapture)
+// CHECK-LABEL: define{{( protected)?}} void @_TF15enum_resilience25functionWithResilientEnumFO14resilient_enum6MediumS1_(%swift.opaque* noalias nocapture sret, %swift.opaque* noalias nocapture)
 public func functionWithResilientEnum(m: Medium) -> Medium {
 
 // CHECK:      [[METADATA:%.*]] = call %swift.type* @_TMaO14resilient_enum6Medium()
@@ -73,7 +73,7 @@ public func functionWithResilientEnum(m: Medium) -> Medium {
   return m
 }
 
-// CHECK-LABEL: define void @_TF15enum_resilience33functionWithIndirectResilientEnumFO14resilient_enum16IndirectApproachS1_(%swift.opaque* noalias nocapture sret, %swift.opaque* noalias nocapture)
+// CHECK-LABEL: define{{( protected)?}} void @_TF15enum_resilience33functionWithIndirectResilientEnumFO14resilient_enum16IndirectApproachS1_(%swift.opaque* noalias nocapture sret, %swift.opaque* noalias nocapture)
 public func functionWithIndirectResilientEnum(ia: IndirectApproach) -> IndirectApproach {
 
 // CHECK:      [[METADATA:%.*]] = call %swift.type* @_TMaO14resilient_enum16IndirectApproach()
@@ -89,7 +89,7 @@ public func functionWithIndirectResilientEnum(ia: IndirectApproach) -> IndirectA
   return ia
 }
 
-// CHECK-LABEL: define void @_TF15enum_resilience31constructResilientEnumNoPayloadFT_O14resilient_enum6Medium
+// CHECK-LABEL: define{{( protected)?}} void @_TF15enum_resilience31constructResilientEnumNoPayloadFT_O14resilient_enum6Medium
 public func constructResilientEnumNoPayload() -> Medium {
 // CHECK:      [[METADATA:%.*]] = call %swift.type* @_TMaO14resilient_enum6Medium()
 // CHECK-NEXT: [[METADATA_ADDR:%.*]] = bitcast %swift.type* [[METADATA]] to i8***
@@ -99,13 +99,13 @@ public func constructResilientEnumNoPayload() -> Medium {
 // CHECK-NEXT: [[WITNESS_ADDR:%.*]] = getelementptr inbounds i8*, i8** [[VWT]], i32 25
 // CHECK-NEXT: [[WITNESS:%.*]] = load i8*, i8** [[WITNESS_ADDR]]
 // CHECK-NEXT: [[WITNESS_FN:%.*]] = bitcast i8* [[WITNESS]]
-// CHECK-NEXT: call void [[WITNESS_FN]](%swift.opaque* %0, i32 2, %swift.type* [[METADATA]])
+// CHECK-NEXT: call void [[WITNESS_FN]](%swift.opaque* %0, i32 0, %swift.type* [[METADATA]])
 
 // CHECK-NEXT: ret void
   return Medium.Paper
 }
 
-// CHECK-LABEL: define void @_TF15enum_resilience29constructResilientEnumPayloadFV16resilient_struct4SizeO14resilient_enum6Medium
+// CHECK-LABEL: define{{( protected)?}} void @_TF15enum_resilience29constructResilientEnumPayloadFV16resilient_struct4SizeO14resilient_enum6Medium
 public func constructResilientEnumPayload(s: Size) -> Medium {
 // CHECK:      [[METADATA:%.*]] = call %swift.type* @_TMaV16resilient_struct4Size()
 // CHECK-NEXT: [[METADATA_ADDR:%.*]] = bitcast %swift.type* [[METADATA]] to i8***
@@ -125,7 +125,7 @@ public func constructResilientEnumPayload(s: Size) -> Medium {
 // CHECK-NEXT: [[WITNESS_ADDR:%.*]] = getelementptr inbounds i8*, i8** [[VWT2]], i32 25
 // CHECK-NEXT: [[WITNESS:%.*]] = load i8*, i8** [[WITNESS_ADDR]]
 // CHECK-NEXT: [[WITNESS_FN:%.*]] = bitcast i8* [[WITNESS]]
-// CHECK-NEXT: call void [[WITNESS_FN]](%swift.opaque* %0, i32 1, %swift.type* [[METADATA2]])
+// CHECK-NEXT: call void [[WITNESS_FN]](%swift.opaque* %0, i32 -2, %swift.type* [[METADATA2]])
 
 // CHECK-NEXT: [[WITNESS_ADDR:%.*]] = getelementptr inbounds i8*, i8** [[VWT]], i32 4
 // CHECK-NEXT: [[WITNESS:%.*]] = load i8*, i8** [[WITNESS_ADDR]]
@@ -136,7 +136,7 @@ public func constructResilientEnumPayload(s: Size) -> Medium {
   return Medium.Postcard(s)
 }
 
-// CHECK-LABEL: define {{i32|i64}} @_TF15enum_resilience19resilientSwitchTestFO14resilient_enum6MediumSi(%swift.opaque* noalias nocapture)
+// CHECK-LABEL: define{{( protected)?}} {{i32|i64}} @_TF15enum_resilience19resilientSwitchTestFO14resilient_enum6MediumSi(%swift.opaque* noalias nocapture)
 // CHECK: [[BUFFER:%.*]] = alloca [[BUFFER_TYPE:\[(12|24) x i8\]]]
 
 // CHECK: [[METADATA:%.*]] = call %swift.type* @_TMaO14resilient_enum6Medium()
@@ -155,9 +155,9 @@ public func constructResilientEnumPayload(s: Size) -> Medium {
 // CHECK: [[TAG:%.*]] = call i32 %getEnumTag(%swift.opaque* [[ENUM_COPY]], %swift.type* [[METADATA]])
 
 // CHECK: switch i32 [[TAG]], label %[[DEFAULT_CASE:.*]] [
-// CHECK:   i32 0, label %[[PAMPHLET_CASE:.*]]
-// CHECK:   i32 2, label %[[PAPER_CASE:.*]]
-// CHECK:   i32 3, label %[[CANVAS_CASE:.*]]
+// CHECK:   i32 -1, label %[[PAMPHLET_CASE:.*]]
+// CHECK:   i32 0, label %[[PAPER_CASE:.*]]
+// CHECK:   i32 1, label %[[CANVAS_CASE:.*]]
 // CHECK: ]
 
 // CHECK: ; <label>:[[PAPER_CASE]]
@@ -190,7 +190,7 @@ public func resilientSwitchTest(m: Medium) -> Int {
 
 public func reabstraction<T>(f: Medium -> T) {}
 
-// CHECK-LABEL: define void @_TF15enum_resilience25resilientEnumPartialApplyFFO14resilient_enum6MediumSiT_(i8*, %swift.refcounted*)
+// CHECK-LABEL: define{{( protected)?}} void @_TF15enum_resilience25resilientEnumPartialApplyFFO14resilient_enum6MediumSiT_(i8*, %swift.refcounted*)
 public func resilientEnumPartialApply(f: Medium -> Int) {
 
 // CHECK:     [[CONTEXT:%.*]] = call noalias %swift.refcounted* @swift_allocObject
@@ -214,7 +214,7 @@ public enum EnumWithResilientPayload {
 // Make sure we call a function to access metadata of enums with
 // resilient layout.
 
-// CHECK-LABEL: define %swift.type* @_TF15enum_resilience20getResilientEnumTypeFT_PMP_()
+// CHECK-LABEL: define{{( protected)?}} %swift.type* @_TF15enum_resilience20getResilientEnumTypeFT_PMP_()
 // CHECK:      [[METADATA:%.*]] = call %swift.type* @_TMaO15enum_resilience24EnumWithResilientPayload()
 // CHECK-NEXT: ret %swift.type* [[METADATA]]
 
@@ -223,7 +223,7 @@ public func getResilientEnumType() -> Any.Type {
 }
 
 // Public metadata accessor for our resilient enum
-// CHECK-LABEL: define %swift.type* @_TMaO15enum_resilience24EnumWithResilientPayload()
+// CHECK-LABEL: define{{( protected)?}} %swift.type* @_TMaO15enum_resilience24EnumWithResilientPayload()
 // CHECK: [[METADATA:%.*]] = load %swift.type*, %swift.type** @_TMLO15enum_resilience24EnumWithResilientPayload
 // CHECK-NEXT: [[COND:%.*]] = icmp eq %swift.type* [[METADATA]], null
 // CHECK-NEXT: br i1 [[COND]], label %cacheIsNull, label %cont
@@ -240,4 +240,4 @@ public func getResilientEnumType() -> Any.Type {
 
 // FIXME: this is bogus
 
-// CHECK-LABEL: define private %swift.type* @create_generic_metadata_EnumWithResilientPayload(%swift.type_pattern*, i8**)
+// CHECK-LABEL: define{{( protected)?}} private %swift.type* @create_generic_metadata_EnumWithResilientPayload(%swift.type_pattern*, i8**)

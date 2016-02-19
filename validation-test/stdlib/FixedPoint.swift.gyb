@@ -78,27 +78,24 @@ def get_fixed_point_hash(bit_pattern, src_bits, word_bits):
 
 truncating_bit_pattern_test_template = gyb.parseTemplate("truncating_bit_pattern",
 """
-% from SwiftIntTypes import *
+% from SwiftIntTypes import all_integer_types, should_define_truncating_bit_pattern_init
 
 % for dst_ty in all_integer_types(word_bits):
 %   Dst = dst_ty.stdlib_name
-
-FixedPoint.test("${Dst}(truncatingBitPattern:)") {
-
 %   for src_ty in all_integer_types(word_bits):
 %     Src = src_ty.stdlib_name
 %     if should_define_truncating_bit_pattern_init(src_ty=src_ty, dst_ty=dst_ty):
 %
 %       for bit_pattern in test_bit_patterns:
 
-  do {
+FixedPoint.test("${Dst}(truncatingBitPattern:) from ${Src}(${bit_pattern})") {
 %       input = prepare_bit_pattern(bit_pattern, src_ty.bits, src_ty.is_signed)
-    let input = get${Src}(${input})
+  let input = get${Src}(${input})
 %       input = prepare_bit_pattern(input, src_ty.bits, False)
-    let output = get${Dst}(${Dst}(truncatingBitPattern: input))
-    let expected = get${Dst}(${prepare_bit_pattern(input, dst_ty.bits, dst_ty.is_signed)})
-    expectEqual(expected, output)
-  }
+  let output = get${Dst}(${Dst}(truncatingBitPattern: input))
+  let expected = get${Dst}(${prepare_bit_pattern(input, dst_ty.bits, dst_ty.is_signed)})
+  expectEqual(expected, output)
+}
 
 %       end
 
@@ -112,7 +109,8 @@ FixedPoint.test("${Dst}(truncatingBitPattern:)") {
 
 %   end
 
-}
+// This comment prevents gyb from miscompiling this file.
+// <rdar://problem/17548877> gyb miscompiles a certain for loop
 
 % end
 """)
@@ -127,7 +125,7 @@ FixedPoint.test("${Dst}(truncatingBitPattern:)") {
       test_bit_patterns=test_bit_patterns,
       word_bits=32)}
 
-#elseif arch(x86_64) || arch(arm64)
+#elseif arch(x86_64) || arch(arm64) || arch(powerpc64) || arch(powerpc64le)
 
   ${gyb.executeTemplate(
       truncating_bit_pattern_test_template,
@@ -149,7 +147,7 @@ _UnimplementedError()
 
 bit_pattern_test_template = gyb.parseTemplate("bit_pattern",
 """
-% from SwiftIntTypes import *
+% from SwiftIntTypes import all_integer_types
 
 % for dst_ty in all_integer_types(word_bits):
 %   Dst = dst_ty.stdlib_name
@@ -157,11 +155,9 @@ bit_pattern_test_template = gyb.parseTemplate("bit_pattern",
 %   # Source is the same as destination, but of different signedness.
 %   src_ty = dst_ty.get_opposite_signedness()
 %   Src = src_ty.stdlib_name
-
-FixedPoint.test("${Dst}(bitPattern: ${Src})") {
-
 %   for bit_pattern in test_bit_patterns:
 
+FixedPoint.test("${Dst}(bitPattern:) from ${Src}(${bit_pattern})") {
   do {
 %     input = prepare_bit_pattern(bit_pattern, src_ty.bits, src_ty.is_signed)
     let input = get${Src}(${input})
@@ -184,11 +180,9 @@ FixedPoint.test("${Dst}(bitPattern: ${Src})") {
     expectEqual(expected, literalOutput)
     expectEqual(expected, output)
   }
-
-%   end
-
 }
 
+%   end
 % end
 
 """)
@@ -203,7 +197,7 @@ FixedPoint.test("${Dst}(bitPattern: ${Src})") {
       test_bit_patterns=test_bit_patterns,
       word_bits=32)}
 
-#elseif arch(x86_64) || arch(arm64)
+#elseif arch(x86_64) || arch(arm64) || arch(powerpc64) || arch(powerpc64le)
 
   ${gyb.executeTemplate(
       bit_pattern_test_template,
@@ -225,7 +219,7 @@ _UnimplementedError()
 
 hash_value_test_template = gyb.parseTemplate("hash_value",
 """
-% from SwiftIntTypes import *
+% from SwiftIntTypes import all_integer_types
 
 % for self_ty in all_integer_types(word_bits):
 %   Self = self_ty.stdlib_name
@@ -261,7 +255,7 @@ FixedPoint.test("${Self}.hashValue") {
       test_bit_patterns=test_bit_patterns,
       word_bits=32)}
 
-#elseif arch(x86_64) || arch(arm64)
+#elseif arch(x86_64) || arch(arm64) || arch(powerpc64) || arch(powerpc64le)
 
   ${gyb.executeTemplate(
       hash_value_test_template,
